@@ -87,10 +87,12 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
         toMem = NULL;
     dbg.debug(_INFO_, "Made LogicLayer %d toMem:%p toCPU:%p\n", llID, toMem, toCPU);
 
-    bankMappingScheme = 0;
+    numDramBanksPerRank = 1;
     #ifdef USE_VAULTSIM_HMC
-        bankMappingScheme = params.find_integer("bank_MappingScheme", 0);
-        out.output("*LogicLayer%d: bankMappingScheme %d\n", ident, bankMappingScheme);
+        numDramBanksPerRank = params.find_integer("num_dram_banks_per_rank", 1);
+        out.output("*LogicLayer%u: numDramBanksPerRank %d\n", ident, numDramBanksPerRank);
+        if (numDramBanksPerRank < 0)
+            dbg.fatal(CALL_INFO, -1, "numDramBanksPerRank should be bigger than 0.\n");
     #endif
 
     // Transaction Support
@@ -309,8 +311,7 @@ bool logicLayer::clock(Cycle_t currentCycle)
             // Save this event footprint
             unsigned newChan, newRank, newBank, newRow, newColumn;
             DRAMSim::addressMapping(eventReady->getAddr() & ~((uint64_t)CacheLineSize-1), newChan, newRank, newBank, newRow, newColumn); //FIXME
-            if (bankMappingScheme == 1)
-                newBank = newRank * 2 + newBank;
+            newBank = newRank * numDramBanksPerRank + newBank;
             vaultBankTrans[vaultID][newBank].insert(currentTransId);
 
             vaultTransActive[vaultID] = true;

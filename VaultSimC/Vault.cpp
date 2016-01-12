@@ -83,10 +83,12 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
 
     memorySystem->RegisterCallbacks(readDataCB, writeDataCB, NULL);
 
-    bankMappingScheme = 0;
+    numDramBanksPerRank = 1;
     #ifdef USE_VAULTSIM_HMC
-        bankMappingScheme = params.find_integer("bank_MappingScheme", 0);
-        out.output("*Vault%u: bankMappingScheme %d\n", id, bankMappingScheme);
+        numDramBanksPerRank = params.find_integer("num_dram_banks_per_rank", 1);
+        out.output("*Vault%u: numDramBanksPerRank %d\n", id, numDramBanksPerRank);
+        if (numDramBanksPerRank < 0)
+            dbg.fatal(CALL_INFO, -1, "numDramBanksPerRank should be bigger than 0.\n");
     #endif
 
     //Transaction Support
@@ -330,8 +332,8 @@ bool Vault::addTransaction(transaction_c transaction)
 {
     unsigned newChan, newRank, newBank, newRow, newColumn;
     DRAMSim::addressMapping(transaction.getAddr(), newChan, newRank, newBank, newRow, newColumn); //FIXME: newRank * MAX_BANK_SIZE + newBank - Why not implemented: performance issues
-    if (bankMappingScheme == 1)
-        newBank = newRank * 2 + newBank;
+    newBank = newRank * numDramBanksPerRank + newBank;
+
     transaction.setBankNo(newBank);
     transaction.inCycle = currentClockCycle;
 
