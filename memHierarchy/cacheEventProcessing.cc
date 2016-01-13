@@ -500,7 +500,6 @@ void Cache::finish(){
     }
     listener_->printStats(*d_);
     delete cf_.cacheArray_;
-    delete cf_.rm_;
     delete d_;
     linkIdMap_.clear();
     nameMap_.clear();
