@@ -98,6 +98,8 @@ private:
     void printStatsForMacSim();
 
 private:
+    int numDramBanksPerRank;
+
     unsigned int llID;
 
     // Links to Vaults
