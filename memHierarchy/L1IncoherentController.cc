@@ -125,6 +125,8 @@ CacheAction L1IncoherentController::handleResponse(MemEvent * respEvent, CacheLi
         case GetXResp:
             handleDataResponse(respEvent, cacheLine, reqEvent);
             break;
+        case AckPut:
+            return IGNORE;
         default:
             d_->fatal(CALL_INFO, -1, "%s, Error: Received unrecognized response: %s. Addr = 0x%" PRIx64 ", Src = %s. Time = %" PRIu64 "ns\n",
                     name_.c_str(), CommandString[cmd], respEvent->getBaseAddr(), respEvent->getSrc().c_str(), ((Component*)owner_)->getCurrentSimTimeNano());
