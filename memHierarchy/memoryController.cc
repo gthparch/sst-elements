@@ -375,6 +375,10 @@ MemController::~MemController() {
 
 void MemController::init(unsigned int phase) {
     if (!isNetworkConnected_) {
+        if (!phase) {
+            lowNetworkLink_->sendInitData(new MemEvent(this, 0, 0, NULLCMD));
+        }
+
         SST::Event *ev = NULL;
         while (NULL != (ev = lowNetworkLink_->recvInitData())) {
             MemEvent *me = dynamic_cast<MemEvent*>(ev);
