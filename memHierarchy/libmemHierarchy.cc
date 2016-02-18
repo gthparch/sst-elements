@@ -20,6 +20,7 @@
 #include "cacheController.h"
 #include "Sieve/sieveController.h"
 #include "bus.h"
+#include "myNetwork.h"
 #include "trivialCPU.h"
 #include "streamCPU.h"
 #include "memoryController.h"
@@ -376,6 +377,28 @@ static const ElementInfoParam bus_params[] = {
 
 
 static const ElementInfoPort bus_ports[] = {
+    {"low_network_%(low_network_ports)d",  "Ports connected to lower level caches (closer to main memory)", memEvent_port_events},
+    {"high_network_%(high_network_ports)d", "Ports connected to higher level caches (closer to CPU)", memEvent_port_events},
+    {NULL, NULL, NULL}
+};
+
+
+static Component* create_MyNetwork(ComponentId_t id, Params& params)
+{
+    return new MyNetwork( id, params );
+}
+
+static const ElementInfoParam myNetwork_params[] = {
+    {"frequency",           "Clock frequency"},
+    {"latency",             "Latency in cycles", "0"},
+    {"debug",               "Prints debug statements --0[No debugging], 1[STDOUT], 2[STDERR], 3[FILE]--", "0"},
+    {"debug_level",         "Debugging level: 0 to 10", "0"},
+    {"debug_addr",          "Optional, int      - Address (in decimal) to be debugged, if not specified or specified as -1, debug output for all addresses will be printed","-1"},
+    {NULL, NULL}
+};
+
+
+static const ElementInfoPort myNetwork_ports[] = {
     {"low_network_%(low_network_ports)d",  "Ports connected to lower level caches (closer to main memory)", memEvent_port_events},
     {"high_network_%(high_network_ports)d", "Ports connected to higher level caches (closer to CPU)", memEvent_port_events},
     {NULL, NULL, NULL}

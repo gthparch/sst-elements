@@ -19,6 +19,8 @@ libmemHierarchy_la_SOURCES = \
 	replacementManager.h \
 	bus.h \
 	bus.cc \
+	myNetwork.h \
+	myNetwork.cc \
 	memoryController.h \
 	memoryController.cc \
         membackend/memBackend.h \
@@ -99,6 +101,7 @@ nobase_sst_HEADERS = \
 	memoryController.h \
 	cacheListener.h \
 	bus.h \
+	myNetwork.h \
 	util.h
 
 libmemHierarchy_la_LDFLAGS = -module -avoid-version
