@@ -24,44 +24,72 @@ namespace SST { namespace MemHierarchy {
 class MyNetwork : public SST::Component 
 {
 public:
-  typedef MemEvent::id_type key_t;
-  static const key_t ANY_KEY;
-  static const char BUS_INFO_STR[];
-  
   MyNetwork(SST::ComponentId_t id, SST::Params& params);
+  virtual ~MyNetwork();
   virtual void init(unsigned int phase);
 
 private:
-  /** Adds event to the incoming event queue.  Reregisters clock if needed */
-  void processIncomingEvent(SST::Event *ev);
+  class MemoryCompInfo 
+  {
+  public: 
+    MemoryCompInfo(unsigned idx, unsigned numStack, uint64_t stackSize, uint64_t interleaveSize) {
+      m_rangeStart = interleaveSize * idx;
+      m_rangeEnd = stackSize * numStack - interleaveSize * (numStack - idx - 1);
+      m_interleaveSize = interleaveSize;
+      m_interleaveStep = interleaveSize * numStack;
+    }
+    
+    bool contains(uint64_t addr) const {
+      if (addr < m_rangeStart || m_rangeEnd >= addr) return false;
+      if (m_interleaveSize == 0) return true;
+      uint64_t offset = (addr - m_rangeStart) % m_interleaveStep;
+      return (offset < m_interleaveSize);
+    }
+
+    bool operator<(const MemoryCompInfo &m) const {
+        return (m_rangeStart < m.m_rangeStart);
+    }
+
+  private:
+    uint64_t m_rangeStart;
+    uint64_t m_rangeEnd;
+    uint64_t m_interleaveSize;
+    uint64_t m_interleaveStep;
+  };
+
+private:
+  void configureParameters(SST::Params&);
+  void configureLinks(SST::Params&);
+
+  void processIncomingRequest(SST::Event *ev) { m_requestQueue.push(ev); }
+  void processIncomingResponse(SST::Event *ev) { m_responseQueue.push(ev); }
   
-  /** Send event to a single destination */
-  void sendSingleEvent(SST::Event *ev);
+  void sendRequest(SST::Event *ev);
+  void sendResponse(SST::Event *ev);
   
-  /**  Clock Handler */
   bool clockTick(Cycle_t);
   
-  /** Configure MyNetwork objects with the appropriate parameters */
-  void configureParameters(SST::Params&);
-  void configureLinks();
-  
   void mapNodeEntry(const std::string&, LinkId_t);
-  LinkId_t lookupNode(const std::string&);
+  LinkId_t lookupNode(const uint64_t);
+  LinkId_t lookupNode(const std::string& name);
 
+private:
   Output m_dbg;
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
-  int m_numHighNetPorts;
-  int m_numLowNetPorts;
-  int m_maxNumPorts;
-  int m_latency;
+  std::queue<SST::Event*> m_requestQueue;
+  std::queue<SST::Event*> m_responseQueue;
+  unsigned m_latency;
 
   std::vector<SST::Link*> m_highNetPorts;
   std::vector<SST::Link*> m_lowNetPorts;
   std::map<string, LinkId_t> m_nameMap;
   std::map<LinkId_t, SST::Link*> m_linkIdMap;
-  std::queue<SST::Event*> m_eventQueue;
+  std::map<LinkId_t, MemoryCompInfo*> m_memoryMap;
+  unsigned m_numStack;
+  uint64_t m_interleaveSize;
+  uint64_t m_stackSize;
 };
 
 }}

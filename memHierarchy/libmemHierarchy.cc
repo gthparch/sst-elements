@@ -391,6 +391,9 @@ static Component* create_MyNetwork(ComponentId_t id, Params& params)
 static const ElementInfoParam myNetwork_params[] = {
     {"frequency",           "Clock frequency"},
     {"latency",             "Latency in cycles", "0"},
+    {"num_stack",           "Number of memory stacks", "1"},
+    {"interleave_size",     "Interleaving granularity in bytes", "4096"},
+    {"stack_size",          "Size of memory stack in MB", "512"},
     {"debug",               "Prints debug statements --0[No debugging], 1[STDOUT], 2[STDERR], 3[FILE]--", "0"},
     {"debug_level",         "Debugging level: 0 to 10", "0"},
     {"debug_addr",          "Optional, int      - Address (in decimal) to be debugged, if not specified or specified as -1, debug output for all addresses will be printed","-1"},
