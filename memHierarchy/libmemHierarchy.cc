@@ -818,6 +818,14 @@ static const ElementInfoComponent components[] = {
         bus_ports,
         COMPONENT_CATEGORY_MEMORY
 	},
+  { "MyNetwork",
+    "Mem Hierarchy ExBus Component",
+    NULL,
+    create_MyNetwork,
+    myNetwork_params,
+    myNetwork_ports,
+    COMPONENT_CATEGORY_MEMORY
+	},
 	{"MemController",
 		"Memory Controller Component",
 		NULL,

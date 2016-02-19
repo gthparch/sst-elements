@@ -32,22 +32,31 @@ private:
   class MemoryCompInfo 
   {
   public: 
-    MemoryCompInfo(unsigned idx, unsigned numStack, uint64_t stackSize, uint64_t interleaveSize) {
+    MemoryCompInfo(unsigned idx, unsigned numStack, uint64_t stackSize, uint64_t interleaveSize) 
+    {
       m_rangeStart = interleaveSize * idx;
       m_rangeEnd = stackSize * numStack - interleaveSize * (numStack - idx - 1);
       m_interleaveSize = interleaveSize;
       m_interleaveStep = interleaveSize * numStack;
     }
     
-    bool contains(uint64_t addr) const {
-      if (addr < m_rangeStart || m_rangeEnd >= addr) return false;
+    bool contains(uint64_t addr) const 
+    {
+      if (addr < m_rangeStart || m_rangeEnd <= addr) return false;
       if (m_interleaveSize == 0) return true;
       uint64_t offset = (addr - m_rangeStart) % m_interleaveStep;
       return (offset < m_interleaveSize);
     }
 
-    bool operator<(const MemoryCompInfo &m) const {
-        return (m_rangeStart < m.m_rangeStart);
+    bool operator<(const MemoryCompInfo &m) const 
+    {
+      return (m_rangeStart < m.m_rangeStart);
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const MemoryCompInfo& mci) 
+    {
+      os << "range (" << mci.m_rangeStart << ", " << mci.m_rangeEnd << ") interleaveSize: " << mci.m_interleaveSize;
+      return os;
     }
 
   private:

@@ -58,9 +58,10 @@ void MyNetwork::sendRequest(SST::Event* ev)
 
   MemEvent* forwardEvent = new MemEvent(*me);
   if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
-    m_dbg.debug(_L3_, "MN Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
-    m_dbg.debug(_L3_, "MN Dst = %s \n", forwardEvent->getDst().c_str());
-    m_dbg.debug(_L3_, "MN Src = %s \n", forwardEvent->getSrc().c_str());
+    m_dbg.debug(_L3_, "Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
+    m_dbg.debug(_L3_, "Src = %s \n", forwardEvent->getSrc().c_str());
+    m_dbg.debug(_L3_, "ILK = %ld \n", me->getDeliveryLink()->getId());
+    m_dbg.debug(_L3_, "OLK = %ld \n", destinationLink->getId());
   }
   destinationLink->send(forwardEvent);
   delete me;
@@ -81,9 +82,10 @@ void MyNetwork::sendResponse(SST::Event* ev)
 
   MemEvent* forwardEvent = new MemEvent(*me);
   if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
-    m_dbg.debug(_L3_, "MN Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
-    m_dbg.debug(_L3_, "MN Dst = %s \n", forwardEvent->getDst().c_str());
-    m_dbg.debug(_L3_, "MN Src = %s \n", forwardEvent->getSrc().c_str());
+    m_dbg.debug(_L3_, "Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
+    m_dbg.debug(_L3_, "Dst = %s \n", forwardEvent->getDst().c_str());
+    m_dbg.debug(_L3_, "ILK = %ld \n", me->getDeliveryLink()->getId());
+    m_dbg.debug(_L3_, "OLK = %ld \n", destinationLink->getId());
   }
   destinationLink->send(forwardEvent);
   delete me;
@@ -192,7 +194,8 @@ void MyNetwork::configureLinks(SST::Params& params)
 
   for (int i = 0; i < m_numStack; ++i) {
     MemoryCompInfo *mci = new MemoryCompInfo(i, m_numStack, m_stackSize, m_interleaveSize);
-    m_memoryMap[m_highNetPorts[i]->getId()] = mci;
+    m_memoryMap[m_lowNetPorts[i]->getId()] = mci;
+    cout << *mci << endl;
   }
 }
 
