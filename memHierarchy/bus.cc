@@ -55,8 +55,8 @@ void Bus::processIncomingEvent(SST::Event* _ev){
 }
 
 bool Bus::clockTick(Cycle_t _time) {
-
-    if(!eventQueue_.empty()){
+    unsigned numEventProcessed = 0;
+    while (!eventQueue_.empty()) {
         SST::Event* event = eventQueue_.front();
         
         if(broadcast_) broadcastEvent(event);
@@ -64,11 +64,15 @@ bool Bus::clockTick(Cycle_t _time) {
         
         eventQueue_.pop();
         idleCount_ = 0;
+
+        numEventProcessed++;
     }
-    else if(busOn_) idleCount_++;
-    
-    
-    if(idleCount_ > idleMax_){
+
+    if (numEventProcessed == 0 && busOn_) {
+      idleCount_++;
+    }
+
+    if (idleCount_ > idleMax_) {
         busOn_ = false;
         idleCount_ = 0;
         return true;
