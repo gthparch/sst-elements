@@ -15,6 +15,8 @@ using namespace SST::MemHierarchy;
 
 MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 {
+  m_currentCycle = 0;
+
   configureParameters(params);
   configureLinks();
 
@@ -27,8 +29,8 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
   for (int i = 0; i < m_numStack; ++i) {
     m_highNetIdxMap[m_highNetPorts[i]->getId()] = i;
     m_lowNetIdxMap[m_lowNetPorts[i]->getId()] = i;
-    m_requestQueues.push_back(queue<SST::Event*>());
-    m_responseQueues.push_back(queue<SST::Event*>());
+    m_requestQueues.push_back(map<SST::Event*, uint64_t>());
+    m_responseQueues.push_back(map<SST::Event*, uint64_t>());
   }
 }
 
@@ -41,21 +43,27 @@ MyNetwork::~MyNetwork()
 
 bool MyNetwork::clockTick(Cycle_t time) 
 {
+  m_currentCycle++;
+
   for (auto it = m_responseQueues.begin(); it != m_responseQueues.end(); it++) {
-    std::queue<SST::Event*> &responseQueue = *it;
-    while (!responseQueue.empty()) {
-      SST::Event* event = responseQueue.front();
-      sendResponse(event);
-      responseQueue.pop();
+    for (auto it2 = it->begin(); it2 != it->end(); it2++) {
+      uint64_t readyCycle = it2->second;
+      if (readyCycle < m_currentCycle) { 
+        SST::Event* event = it2->first;
+        sendResponse(event);
+        it->erase(it2);
+      }
     }
   }
 
   for (auto it = m_requestQueues.begin(); it != m_requestQueues.end(); it++) {
-    std::queue<SST::Event*> &requestQueue = *it;
-    while (!requestQueue.empty()) {
-      SST::Event* event = requestQueue.front();
-      sendRequest(event);
-      requestQueue.pop();
+    for (auto it2 = it->begin(); it2 != it->end(); it2++) {
+      uint64_t readyCycle = it2->second;
+      if (readyCycle < m_currentCycle) { 
+        SST::Event* event = it2->first;
+        sendRequest(event);
+        it->erase(it2);
+      }
     }
   }
 
@@ -65,26 +73,45 @@ bool MyNetwork::clockTick(Cycle_t time)
 void MyNetwork::processIncomingRequest(SST::Event *ev) 
 { 
   MemEvent *me = static_cast<MemEvent*>(ev);
-  unsigned idx = m_highNetIdxMap[me->getDeliveryLink()->getId()];
-  m_requestQueues[idx].push(ev); 
+
+  LinkId_t sourceLinkIdx = me->getDeliveryLink()->getId();
+  unsigned sourceIdx = m_highNetIdxMap[sourceLinkIdx];
+  LinkId_t destinationLinkIdx = lookupNode(me->getAddr());
+  unsigned destinationIdx = m_lowNetIdxMap[destinationLinkIdx];
+  unsigned latency = (sourceIdx == destinationIdx) ? m_local_latency : m_remote_latency;
+  uint64_t readyCycle = m_currentCycle + latency;
+
+  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
+    m_dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " Src: %s Dst: %u currentCycle: %" PRIu64 " readyCycle: %" PRIu64 "\n",
+      CommandString[me->getCmd()], me->getAddr(), me->getSrc().c_str(), destinationIdx, m_currentCycle, readyCycle);
+  }
+
+  m_requestQueues[sourceIdx][ev] = readyCycle; 
 }
 
 void MyNetwork::processIncomingResponse(SST::Event *ev) 
 { 
   MemEvent *me = static_cast<MemEvent*>(ev);
-  unsigned idx = m_lowNetIdxMap[me->getDeliveryLink()->getId()];
-  m_responseQueues[idx].push(ev); 
+
+  LinkId_t sourceLinkIdx = me->getDeliveryLink()->getId();
+  unsigned sourceIdx = m_lowNetIdxMap[sourceLinkIdx];
+  LinkId_t destinationLinkIdx = lookupNode(me->getDst());
+  unsigned destinationIdx = m_highNetIdxMap[destinationLinkIdx];
+  unsigned latency = (sourceIdx == destinationIdx) ? m_local_latency : m_remote_latency;
+  uint64_t readyCycle = m_currentCycle + latency;
+
+  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
+    m_dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " Src: %s Dst: %s currentCycle: %" PRIu64 " readyCycle: %" PRIu64 "\n",
+      CommandString[me->getCmd()], convertToFlatAddress(me->getAddr(), m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart()), 
+      me->getSrc().c_str(), me->getDst().c_str(), m_currentCycle, readyCycle);
+  }
+
+  m_responseQueues[sourceIdx][ev] = readyCycle; 
 }
 
 void MyNetwork::sendRequest(SST::Event* ev) 
 {
   MemEvent *me = static_cast<MemEvent*>(ev);
-  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    m_dbg.debug(_L3_,"\n\n");
-    m_dbg.debug(_L3_,"----------------------------------------------------------------------------------------\n");  //raise(SIGINT);
-    m_dbg.debug(_L3_,"Incoming Event. Name: %s, Cmd: %s, Addr: %" PRIx64 ", BsAddr: %" PRIx64 ", Src: %s, Dst: %s, LinkID: %ld \n",
-        this->getName().c_str(), CommandString[me->getCmd()], me->getAddr(), me->getBaseAddr(), me->getSrc().c_str(), me->getDst().c_str(), me->getDeliveryLink()->getId());
-  }
 
   LinkId_t destinationLinkId = lookupNode(me->getAddr());
   SST::Link* destinationLink = m_linkIdMap[destinationLinkId];
@@ -93,11 +120,8 @@ void MyNetwork::sendRequest(SST::Event* ev)
   forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), m_memoryMap[destinationLinkId]->getRangeStart()));
   forwardEvent->setBaseAddr(convertToLocalAddress(me->getAddr(), m_memoryMap[destinationLinkId]->getRangeStart()));
 
-  if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
-    m_dbg.debug(_L3_, "Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
-    m_dbg.debug(_L3_, "Src = %s \n", forwardEvent->getSrc().c_str());
-    m_dbg.debug(_L3_, "ILK = %ld \n", me->getDeliveryLink()->getId());
-    m_dbg.debug(_L3_, "OLK = %ld \n", destinationLink->getId());
+  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
+    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " currentCycle: %" PRIu64 "\n", CommandString[me->getCmd()], me->getAddr(), m_currentCycle);
   }
 
   destinationLink->send(forwardEvent);
@@ -107,12 +131,6 @@ void MyNetwork::sendRequest(SST::Event* ev)
 void MyNetwork::sendResponse(SST::Event* ev) 
 {
   MemEvent *me = static_cast<MemEvent*>(ev);
-  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    m_dbg.debug(_L3_,"\n\n");
-    m_dbg.debug(_L3_,"----------------------------------------------------------------------------------------\n");  //raise(SIGINT);
-    m_dbg.debug(_L3_,"Incoming Event. Name: %s, Cmd: %s, Addr: %" PRIx64 ", BsAddr: %" PRIx64 ", Src: %s, Dst: %s, LinkID: %ld \n",
-        this->getName().c_str(), CommandString[me->getCmd()], me->getAddr(), me->getBaseAddr(), me->getSrc().c_str(), me->getDst().c_str(), me->getDeliveryLink()->getId());
-  }
 
   LinkId_t destinationLinkId = lookupNode(me->getDst());
   SST::Link* destinationLink = m_linkIdMap[destinationLinkId];
@@ -121,12 +139,10 @@ void MyNetwork::sendResponse(SST::Event* ev)
   forwardEvent->setAddr(convertToFlatAddress(me->getAddr(), m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart()));
   forwardEvent->setBaseAddr(convertToFlatAddress(me->getAddr(), m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart()));
 
-  if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
-    m_dbg.debug(_L3_, "Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
-    m_dbg.debug(_L3_, "Dst = %s \n", forwardEvent->getDst().c_str());
-    m_dbg.debug(_L3_, "ILK = %ld \n", me->getDeliveryLink()->getId());
-    m_dbg.debug(_L3_, "OLK = %ld \n", destinationLink->getId());
+  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
+    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " currentCycle: %" PRIu64 "\n", CommandString[me->getCmd()], me->getAddr(), m_currentCycle);
   }
+
   destinationLink->send(forwardEvent);
   delete me;
 }
@@ -216,7 +232,9 @@ void MyNetwork::configureParameters(SST::Params& params)
 {
   int debugLevel = params.find_integer("debug_level", 0);
   Output::output_location_t outputLocation = (Output::output_location_t)params.find_integer("debug", 0);
-  m_dbg.init("--->  ", debugLevel, 0, outputLocation);
+
+  string name = "[" + this->getName() + "] ";
+  m_dbg.init(name.c_str(), debugLevel, 0, outputLocation);
   if (debugLevel < 0 || debugLevel > 10) {
     m_dbg.fatal(CALL_INFO, -1, "Debugging level must be betwee 0 and 10. \n");
   }

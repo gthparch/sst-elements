@@ -95,8 +95,8 @@ private:
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
-  std::vector<std::queue<SST::Event*>> m_requestQueues;
-  std::vector<std::queue<SST::Event*>> m_responseQueues;
+  std::vector<std::map<SST::Event*, uint64_t>> m_requestQueues;
+  std::vector<std::map<SST::Event*, uint64_t>> m_responseQueues;
 
   unsigned m_local_latency;
   unsigned m_remote_latency;
@@ -112,6 +112,8 @@ private:
   unsigned m_numStack;
   uint64_t m_interleaveSize;
   uint64_t m_stackSize;
+
+  uint64_t m_currentCycle;
 };
 
 }}
