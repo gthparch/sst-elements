@@ -69,10 +69,10 @@ bool Bus::clockTick(Cycle_t _time) {
     }
 
     if (numEventProcessed == 0 && busOn_) {
-      idleCount_++;
+        idleCount_++;
     }
 
-    if (idleCount_ > idleMax_) {
+    if (idleCount_ > idleMax_){
         busOn_ = false;
         idleCount_ = 0;
         return true;

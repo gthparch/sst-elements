@@ -59,6 +59,11 @@ private:
       return os;
     }
 
+    uint64_t getRangeStart(void) const { return m_rangeStart; }
+    uint64_t getRangeEnd(void) const { return m_rangeEnd; }
+    uint64_t getInterleaveSize(void) const { return m_interleaveSize; }
+    uint64_t getInterleaveStep(void) const { return m_interleaveStep; }
+
   private:
     uint64_t m_rangeStart;
     uint64_t m_rangeEnd;
@@ -68,11 +73,11 @@ private:
 
 private:
   void configureParameters(SST::Params&);
-  void configureLinks(SST::Params&);
+  void configureLinks();
 
-  void processIncomingRequest(SST::Event *ev) { m_requestQueue.push(ev); }
-  void processIncomingResponse(SST::Event *ev) { m_responseQueue.push(ev); }
-  
+  void processIncomingRequest(SST::Event *ev);
+  void processIncomingResponse(SST::Event *ev);  
+
   void sendRequest(SST::Event *ev);
   void sendResponse(SST::Event *ev);
   
@@ -82,20 +87,28 @@ private:
   LinkId_t lookupNode(const uint64_t);
   LinkId_t lookupNode(const std::string& name);
 
+  uint64_t convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart);
+  uint64_t convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart);
+
 private:
   Output m_dbg;
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
-  std::queue<SST::Event*> m_requestQueue;
-  std::queue<SST::Event*> m_responseQueue;
-  unsigned m_latency;
+  std::vector<std::queue<SST::Event*>> m_requestQueues;
+  std::vector<std::queue<SST::Event*>> m_responseQueues;
+
+  unsigned m_local_latency;
+  unsigned m_remote_latency;
 
   std::vector<SST::Link*> m_highNetPorts;
   std::vector<SST::Link*> m_lowNetPorts;
   std::map<string, LinkId_t> m_nameMap;
   std::map<LinkId_t, SST::Link*> m_linkIdMap;
   std::map<LinkId_t, MemoryCompInfo*> m_memoryMap;
+  std::map<LinkId_t, unsigned> m_highNetIdxMap;
+  std::map<LinkId_t, unsigned> m_lowNetIdxMap;
+
   unsigned m_numStack;
   uint64_t m_interleaveSize;
   uint64_t m_stackSize;

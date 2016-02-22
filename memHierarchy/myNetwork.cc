@@ -16,7 +16,20 @@ using namespace SST::MemHierarchy;
 MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 {
   configureParameters(params);
-  configureLinks(params);
+  configureLinks();
+
+  for (int i = 0; i < m_numStack; ++i) {
+    MemoryCompInfo *mci = new MemoryCompInfo(i, m_numStack, m_stackSize, m_interleaveSize);
+    m_memoryMap[m_lowNetPorts[i]->getId()] = mci;
+    cout << *mci << endl;
+  }
+
+  for (int i = 0; i < m_numStack; ++i) {
+    m_highNetIdxMap[m_highNetPorts[i]->getId()] = i;
+    m_lowNetIdxMap[m_lowNetPorts[i]->getId()] = i;
+    m_requestQueues.push_back(queue<SST::Event*>());
+    m_responseQueues.push_back(queue<SST::Event*>());
+  }
 }
 
 MyNetwork::~MyNetwork() 
@@ -28,19 +41,39 @@ MyNetwork::~MyNetwork()
 
 bool MyNetwork::clockTick(Cycle_t time) 
 {
-  if (!m_responseQueue.empty()) {
-    SST::Event* event = m_responseQueue.front();
-    sendResponse(event);
-    m_responseQueue.pop();
+  for (auto it = m_responseQueues.begin(); it != m_responseQueues.end(); it++) {
+    std::queue<SST::Event*> &responseQueue = *it;
+    while (!responseQueue.empty()) {
+      SST::Event* event = responseQueue.front();
+      sendResponse(event);
+      responseQueue.pop();
+    }
   }
 
-  if (!m_requestQueue.empty()) {
-    SST::Event* event = m_requestQueue.front();
-    sendRequest(event);
-    m_requestQueue.pop();
-  }   
+  for (auto it = m_requestQueues.begin(); it != m_requestQueues.end(); it++) {
+    std::queue<SST::Event*> &requestQueue = *it;
+    while (!requestQueue.empty()) {
+      SST::Event* event = requestQueue.front();
+      sendRequest(event);
+      requestQueue.pop();
+    }
+  }
 
   return false;
+}
+
+void MyNetwork::processIncomingRequest(SST::Event *ev) 
+{ 
+  MemEvent *me = static_cast<MemEvent*>(ev);
+  unsigned idx = m_highNetIdxMap[me->getDeliveryLink()->getId()];
+  m_requestQueues[idx].push(ev); 
+}
+
+void MyNetwork::processIncomingResponse(SST::Event *ev) 
+{ 
+  MemEvent *me = static_cast<MemEvent*>(ev);
+  unsigned idx = m_lowNetIdxMap[me->getDeliveryLink()->getId()];
+  m_responseQueues[idx].push(ev); 
 }
 
 void MyNetwork::sendRequest(SST::Event* ev) 
@@ -57,12 +90,16 @@ void MyNetwork::sendRequest(SST::Event* ev)
   SST::Link* destinationLink = m_linkIdMap[destinationLinkId];
 
   MemEvent* forwardEvent = new MemEvent(*me);
+  forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), m_memoryMap[destinationLinkId]->getRangeStart()));
+  forwardEvent->setBaseAddr(convertToLocalAddress(me->getAddr(), m_memoryMap[destinationLinkId]->getRangeStart()));
+
   if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
     m_dbg.debug(_L3_, "Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
     m_dbg.debug(_L3_, "Src = %s \n", forwardEvent->getSrc().c_str());
     m_dbg.debug(_L3_, "ILK = %ld \n", me->getDeliveryLink()->getId());
     m_dbg.debug(_L3_, "OLK = %ld \n", destinationLink->getId());
   }
+
   destinationLink->send(forwardEvent);
   delete me;
 }
@@ -81,6 +118,9 @@ void MyNetwork::sendResponse(SST::Event* ev)
   SST::Link* destinationLink = m_linkIdMap[destinationLinkId];
 
   MemEvent* forwardEvent = new MemEvent(*me);
+  forwardEvent->setAddr(convertToFlatAddress(me->getAddr(), m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart()));
+  forwardEvent->setBaseAddr(convertToFlatAddress(me->getAddr(), m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart()));
+
   if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
     m_dbg.debug(_L3_, "Cmd = %s \n", CommandString[forwardEvent->getCmd()]);
     m_dbg.debug(_L3_, "Dst = %s \n", forwardEvent->getDst().c_str());
@@ -125,6 +165,53 @@ LinkId_t MyNetwork::lookupNode(const string& name)
   return it->second;
 }
 
+uint64_t MyNetwork::convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart)
+{
+  uint64_t localAddress = 0;
+
+  if (m_interleaveSize == 0) {
+    localAddress = requestedAddress - rangeStart;
+  } else {
+    uint64_t interleaveStep = m_interleaveSize * m_numStack;
+
+    Addr addr = requestedAddress - rangeStart;
+    Addr step = addr / interleaveStep;
+    Addr offset = addr % interleaveStep;
+
+    localAddress = (step * m_interleaveSize) + offset;
+  }
+
+  if (DEBUG_ALL || requestedAddress == DEBUG_ADDR) {
+    m_dbg.debug(_L10_, "Converted requested address 0x%" PRIx64 " to local address 0x%" PRIx64 "\n", requestedAddress, localAddress);
+  }
+
+  return localAddress;
+}
+
+uint64_t MyNetwork::convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart)
+{
+  uint64_t flatAddress = 0;
+
+  if (m_interleaveSize == 0) {
+    flatAddress = localAddress + rangeStart;
+  } else {
+    uint64_t interleaveStep = m_interleaveSize * m_numStack;
+
+    Addr addr = localAddress;
+    Addr step = addr / m_interleaveSize; 
+    Addr offset = addr % m_interleaveSize;
+
+    flatAddress = (step * interleaveStep) + offset;
+    flatAddress = flatAddress + rangeStart;
+  }
+
+  if (DEBUG_ALL || flatAddress == DEBUG_ADDR) {
+    m_dbg.debug(_L10_, "Converted local address 0x%" PRIx64 " to flat address 0x%" PRIx64 "\n", localAddress, flatAddress);
+  }
+
+  return flatAddress;
+}
+
 void MyNetwork::configureParameters(SST::Params& params) 
 {
   int debugLevel = params.find_integer("debug_level", 0);
@@ -143,7 +230,8 @@ void MyNetwork::configureParameters(SST::Params& params)
     DEBUG_ALL = false;
   }
 
-  m_latency = params.find_integer("latency", 1);
+  m_local_latency = params.find_integer("local_latency", 1);
+  m_remote_latency = params.find_integer("remote_latency", 1);
   string frequency = params.find_string("frequency", "1 GHz");
   
   /** Multiply Frequency times two.  
@@ -158,15 +246,15 @@ void MyNetwork::configureParameters(SST::Params& params)
   
   Clock::Handler<MyNetwork>* clockHandler = new Clock::Handler<MyNetwork>(this, &MyNetwork::clockTick);
   registerClock(frequency, clockHandler);
-}
 
-void MyNetwork::configureLinks(SST::Params& params) 
-{
   m_numStack = params.find_integer("num_stack", 1);
   uint64_t stackSize = params.find_integer("stack_size", 0); // in MB
   m_stackSize = stackSize * (1024*1024ul); // Convert into MBs
   m_interleaveSize = (uint64_t) params.find_integer("interleave_size", 4096);
+}
 
+void MyNetwork::configureLinks() 
+{
   SST::Link* link;
 	for (int i = 0; i < m_numStack; i++) {
 		ostringstream linkName;
@@ -191,12 +279,6 @@ void MyNetwork::configureLinks(SST::Params& params)
       m_dbg.output(CALL_INFO, "Port %lu = Link %d\n", m_lowNetPorts[i]->getId(), i);
     }
 	}
-
-  for (int i = 0; i < m_numStack; ++i) {
-    MemoryCompInfo *mci = new MemoryCompInfo(i, m_numStack, m_stackSize, m_interleaveSize);
-    m_memoryMap[m_lowNetPorts[i]->getId()] = mci;
-    cout << *mci << endl;
-  }
 }
 
 void MyNetwork::init(unsigned int phase)

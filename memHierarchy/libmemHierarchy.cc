@@ -390,7 +390,8 @@ static Component* create_MyNetwork(ComponentId_t id, Params& params)
 
 static const ElementInfoParam myNetwork_params[] = {
     {"frequency",           "Clock frequency"},
-    {"latency",             "Latency in cycles", "0"},
+    {"local_latency",       "Latency for local access in cycles", "0"},
+    {"remote_latency",      "Latency for remote access in cycles", "0"},
     {"num_stack",           "Number of memory stacks", "1"},
     {"interleave_size",     "Interleaving granularity in bytes", "4096"},
     {"stack_size",          "Size of memory stack in MB", "512"},
