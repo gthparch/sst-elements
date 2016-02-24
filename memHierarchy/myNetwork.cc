@@ -81,6 +81,7 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
   unsigned destinationIdx = m_lowNetIdxMap[destinationLinkIdx];
 
   unsigned latency = 0;
+
   if (sourceIdx == destinationIdx) {
     latency = m_local_latency;
     ++m_local_accesses[sourceIdx];
@@ -90,6 +91,7 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
   }
 
   m_latencyMaps[sourceIdx][me->getAddr()] = m_currentCycle;
+  ++m_per_stack_accesses[sourceIdx][destinationIdx];
 
   uint64_t readyCycle = m_currentCycle + latency;
 
@@ -114,6 +116,7 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
 
   unsigned latency = 0;
   uint64_t roundTripTime = 0;
+
   if (sourceIdx == destinationIdx) {
     latency = m_local_latency;
     roundTripTime = m_currentCycle + latency - m_latencyMaps[destinationIdx][flatAddress];
@@ -123,7 +126,9 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     roundTripTime = m_currentCycle + latency - m_latencyMaps[destinationIdx][flatAddress];
     m_remote_access_latencies[destinationIdx] += roundTripTime;
   }
+
   m_latencyMaps[destinationIdx].erase(flatAddress);
+  ++m_per_core_accesses[sourceIdx][destinationIdx];
 
   uint64_t readyCycle = m_currentCycle + latency;
 
@@ -356,6 +361,12 @@ void MyNetwork::initStats()
 
     // initialization of stat-related variables goes here
     m_latencyMaps.push_back(map<uint64_t, uint64_t>());
+    m_per_core_accesses.push_back(vector<uint64_t>());
+    m_per_stack_accesses.push_back(vector<uint64_t>());
+    for (int j = 0; j < m_numStack; ++j) {
+      m_per_core_accesses[i].push_back(0);
+      m_per_stack_accesses[i].push_back(0);
+    }
   }
 }
 
@@ -375,10 +386,23 @@ void MyNetwork::printStats()
     writeTo(ofs, m_name, stat_name.str(), m_local_accesses[i]);
     stat_name.str(string()); stat_name << "remote_accesses_core_" << i;
     writeTo(ofs, m_name, stat_name.str(), m_remote_accesses[i]);
+
+    for (int j = 0; j < m_numStack; ++j) {
+      stat_name.str(string()); stat_name << "requests_from_core_" << i << "_to_stack_" << j;
+      writeTo(ofs, m_name, stat_name.str(), m_per_stack_accesses[i][j]);
+    }
+
+    for (int j = 0; j < m_numStack; ++j) {
+      stat_name.str(string()); stat_name << "responses_from_stack_" << i << "_to_core_" << j;
+      writeTo(ofs, m_name, stat_name.str(), m_per_core_accesses[i][j]);
+    }
+
     stat_name.str(string()); stat_name << "local_access_avg_latency_core_" << i;
     writeTo(ofs, m_name, stat_name.str(), m_local_access_latencies[i] / m_local_accesses[i]);
     stat_name.str(string()); stat_name << "remote_access_avg_latency_core_" << i;
     writeTo(ofs, m_name, stat_name.str(), m_remote_access_latencies[i] / m_remote_accesses[i]);
+
+    ofs << endl;
   }
 
   ofs.close();

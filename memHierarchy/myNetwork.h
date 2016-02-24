@@ -143,6 +143,8 @@ private:
   vector<uint64_t> m_remote_accesses;
   vector<uint64_t> m_local_access_latencies;
   vector<uint64_t> m_remote_access_latencies;
+  vector<vector<uint64_t>> m_per_core_accesses; // count the number of requests from each core from each stack's point of view
+  vector<vector<uint64_t>> m_per_stack_accesses; // count the number of requests sent to each stack from each core's point of view
 };
 
 }}
