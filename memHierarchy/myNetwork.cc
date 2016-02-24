@@ -15,6 +15,7 @@ using namespace SST::MemHierarchy;
 
 MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 {
+  m_name = this->Component::getName();
   m_currentCycle = 0;
 
   configureParameters(params);
@@ -78,7 +79,18 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
   unsigned sourceIdx = m_highNetIdxMap[sourceLinkIdx];
   LinkId_t destinationLinkIdx = lookupNode(me->getAddr());
   unsigned destinationIdx = m_lowNetIdxMap[destinationLinkIdx];
-  unsigned latency = (sourceIdx == destinationIdx) ? m_local_latency : m_remote_latency;
+
+  unsigned latency = 0;
+  if (sourceIdx == destinationIdx) {
+    latency = m_local_latency;
+    ++m_local_accesses[sourceIdx];
+  } else {
+    latency = m_remote_latency;
+    ++m_remote_accesses[sourceIdx];
+  }
+
+  m_latencyMaps[sourceIdx][me->getAddr()] = m_currentCycle;
+
   uint64_t readyCycle = m_currentCycle + latency;
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
@@ -97,13 +109,27 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
   unsigned sourceIdx = m_lowNetIdxMap[sourceLinkIdx];
   LinkId_t destinationLinkIdx = lookupNode(me->getDst());
   unsigned destinationIdx = m_highNetIdxMap[destinationLinkIdx];
-  unsigned latency = (sourceIdx == destinationIdx) ? m_local_latency : m_remote_latency;
+  uint64_t localAddress = me->getAddr();
+  uint64_t flatAddress = convertToFlatAddress(localAddress, m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart());
+
+  unsigned latency = 0;
+  uint64_t roundTripTime = 0;
+  if (sourceIdx == destinationIdx) {
+    latency = m_local_latency;
+    roundTripTime = m_currentCycle + latency - m_latencyMaps[destinationIdx][flatAddress];
+    m_local_access_latencies[destinationIdx] += roundTripTime;
+  } else {
+    latency = m_remote_latency;
+    roundTripTime = m_currentCycle + latency - m_latencyMaps[destinationIdx][flatAddress];
+    m_remote_access_latencies[destinationIdx] += roundTripTime;
+  }
+  m_latencyMaps[destinationIdx].erase(flatAddress);
+
   uint64_t readyCycle = m_currentCycle + latency;
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
     m_dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " Src: %s Dst: %s currentCycle: %" PRIu64 " readyCycle: %" PRIu64 "\n",
-      CommandString[me->getCmd()], convertToFlatAddress(me->getAddr(), m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart()), 
-      me->getSrc().c_str(), me->getDst().c_str(), m_currentCycle, readyCycle);
+      CommandString[me->getCmd()], flatAddress, me->getSrc().c_str(), me->getDst().c_str(), m_currentCycle, readyCycle);
   }
 
   m_responseQueues[sourceIdx][ev] = readyCycle; 
@@ -278,7 +304,7 @@ void MyNetwork::configureLinks()
 		ostringstream linkName;
 		linkName << "high_network_" << i;
 		string ln = linkName.str();
-		link = configureLink(ln, "50 ps", new Event::Handler<MyNetwork>(this, &MyNetwork::processIncomingRequest));
+		link = configureLink(ln, "1 ps", new Event::Handler<MyNetwork>(this, &MyNetwork::processIncomingRequest));
 		if (link) {
       m_highNetPorts.push_back(link);
       m_linkIdMap[m_highNetPorts[i]->getId()] = m_highNetPorts[i];
@@ -290,7 +316,7 @@ void MyNetwork::configureLinks()
 		ostringstream linkName;
 		linkName << "low_network_" << i;
 		string ln = linkName.str();
-		link = configureLink(ln, "50 ps", new Event::Handler<MyNetwork>(this, &MyNetwork::processIncomingResponse));
+		link = configureLink(ln, "1 ps", new Event::Handler<MyNetwork>(this, &MyNetwork::processIncomingResponse));
     if (link) {
       m_lowNetPorts.push_back(link);
       m_linkIdMap[m_lowNetPorts[i]->getId()] = m_lowNetPorts[i];
@@ -311,4 +337,49 @@ void MyNetwork::init(unsigned int phase)
       delete memEvent;
     }
   }
+
+  initStats();
+}
+
+void MyNetwork::finish()
+{
+  printStats();
+}
+
+void MyNetwork::initStats()
+{
+  for (int i = 0; i < m_numStack; ++i) {
+    m_local_accesses.push_back(0);
+    m_remote_accesses.push_back(0);
+    m_local_access_latencies.push_back(0);
+    m_remote_access_latencies.push_back(0);
+
+    // initialization of stat-related variables goes here
+    m_latencyMaps.push_back(map<uint64_t, uint64_t>());
+  }
+}
+
+void MyNetwork::printStats()
+{
+  stringstream ss;
+  ss << m_name.c_str() << ".stat.out";
+  string filename = ss.str();
+
+  ofstream ofs;
+  ofs.exceptions(std::ofstream::eofbit | std::ofstream::failbit | std::ofstream::badbit);
+  ofs.open(filename.c_str(), std::ios_base::out);
+
+  stringstream stat_name;
+  for (int i = 0; i < m_numStack; ++i) {
+    stat_name.str(string()); stat_name << "local_accesses_core_" << i;
+    writeTo(ofs, m_name, stat_name.str(), m_local_accesses[i]);
+    stat_name.str(string()); stat_name << "remote_accesses_core_" << i;
+    writeTo(ofs, m_name, stat_name.str(), m_remote_accesses[i]);
+    stat_name.str(string()); stat_name << "local_access_avg_latency_core_" << i;
+    writeTo(ofs, m_name, stat_name.str(), m_local_access_latencies[i] / m_local_accesses[i]);
+    stat_name.str(string()); stat_name << "remote_access_avg_latency_core_" << i;
+    writeTo(ofs, m_name, stat_name.str(), m_remote_access_latencies[i] / m_remote_accesses[i]);
+  }
+
+  ofs.close();
 }

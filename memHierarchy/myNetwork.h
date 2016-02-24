@@ -3,7 +3,9 @@
 
 #include <boost/serialization/deque.hpp>
 #include <boost/serialization/map.hpp>
+#include <boost/algorithm/string.hpp>
 
+#include <fstream>
 #include <queue>
 #include <map>
 
@@ -27,6 +29,7 @@ public:
   MyNetwork(SST::ComponentId_t id, SST::Params& params);
   virtual ~MyNetwork();
   virtual void init(unsigned int phase);
+  virtual void finish();
 
 private:
   class MemoryCompInfo 
@@ -53,7 +56,7 @@ private:
       return (m_rangeStart < m.m_rangeStart);
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const MemoryCompInfo& mci) 
+    friend ostream& operator<<(ostream& os, const MemoryCompInfo& mci)
     {
       os << "range (" << mci.m_rangeStart << ", " << mci.m_rangeEnd << ") interleaveSize: " << mci.m_interleaveSize;
       return os;
@@ -83,37 +86,63 @@ private:
   
   bool clockTick(Cycle_t);
   
-  void mapNodeEntry(const std::string&, LinkId_t);
+  void mapNodeEntry(const string&, LinkId_t);
   LinkId_t lookupNode(const uint64_t);
-  LinkId_t lookupNode(const std::string& name);
+  LinkId_t lookupNode(const string& name);
 
   uint64_t convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart);
   uint64_t convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart);
+
+  void initStats();
+  void printStats();
+
+  // Helper function for printing statistics in MacSim format
+  template<typename T>
+  void writeTo(ofstream &stream, string prefix, string name, T count)
+  {
+    #define FILED1_LENGTH 45
+    #define FILED2_LENGTH 20
+    #define FILED3_LENGTH 30
+
+    stream.setf(ios::left, ios::adjustfield);
+    string capitalized_prefixed_name = boost::to_upper_copy(prefix + "_" + name);
+    stream << setw(FILED1_LENGTH) << capitalized_prefixed_name;
+    stream.setf(ios::right, ios::adjustfield);
+    stream << setw(FILED2_LENGTH) << count << setw(FILED3_LENGTH) << count << endl << endl;
+  }
 
 private:
   Output m_dbg;
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
-  std::vector<std::map<SST::Event*, uint64_t>> m_requestQueues;
-  std::vector<std::map<SST::Event*, uint64_t>> m_responseQueues;
+  vector<map<SST::Event*, uint64_t>> m_requestQueues;
+  vector<map<SST::Event*, uint64_t>> m_responseQueues;
 
   unsigned m_local_latency;
   unsigned m_remote_latency;
 
-  std::vector<SST::Link*> m_highNetPorts;
-  std::vector<SST::Link*> m_lowNetPorts;
-  std::map<string, LinkId_t> m_nameMap;
-  std::map<LinkId_t, SST::Link*> m_linkIdMap;
-  std::map<LinkId_t, MemoryCompInfo*> m_memoryMap;
-  std::map<LinkId_t, unsigned> m_highNetIdxMap;
-  std::map<LinkId_t, unsigned> m_lowNetIdxMap;
+  vector<SST::Link*> m_highNetPorts;
+  vector<SST::Link*> m_lowNetPorts;
+  map<string, LinkId_t> m_nameMap;
+  map<LinkId_t, SST::Link*> m_linkIdMap;
+  map<LinkId_t, MemoryCompInfo*> m_memoryMap;
+  map<LinkId_t, unsigned> m_highNetIdxMap;
+  map<LinkId_t, unsigned> m_lowNetIdxMap;
 
   unsigned m_numStack;
   uint64_t m_interleaveSize;
   uint64_t m_stackSize;
 
   uint64_t m_currentCycle;
+  string m_name;
+
+  vector<map<uint64_t, uint64_t>> m_latencyMaps;
+
+  vector<uint64_t> m_local_accesses;
+  vector<uint64_t> m_remote_accesses;
+  vector<uint64_t> m_local_access_latencies;
+  vector<uint64_t> m_remote_access_latencies;
 };
 
 }}
