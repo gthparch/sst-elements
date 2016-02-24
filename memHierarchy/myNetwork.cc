@@ -398,9 +398,9 @@ void MyNetwork::printStats()
     }
 
     stat_name.str(string()); stat_name << "local_access_avg_latency_core_" << i;
-    writeTo(ofs, m_name, stat_name.str(), m_local_access_latencies[i] / m_local_accesses[i]);
+    writeTo(ofs, m_name, stat_name.str(), (m_local_accesses[i] > 0) ? m_local_access_latencies[i] / m_local_accesses[i] : 0);
     stat_name.str(string()); stat_name << "remote_access_avg_latency_core_" << i;
-    writeTo(ofs, m_name, stat_name.str(), m_remote_access_latencies[i] / m_remote_accesses[i]);
+    writeTo(ofs, m_name, stat_name.str(), (m_remote_accesses[i] > 0) ? m_remote_access_latencies[i] / m_remote_accesses[i] : 0);
 
     ofs << endl;
   }
