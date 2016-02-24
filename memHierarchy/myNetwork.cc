@@ -197,7 +197,7 @@ LinkId_t MyNetwork::lookupNode(const uint64_t addr)
   }
 
   if (destinationLinkId == -1) {
-    m_dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup for address 0x%" PRIx64 "failed\n", addr);
+    m_dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup for address 0x%" PRIx64 "failed\n", getName().c_str(), addr);
   }
 
   return destinationLinkId;
