@@ -10,23 +10,28 @@
 // distribution.
 
 
-#include <sst_config.h>
-#include "arielfreeev.h"
+#ifndef _H_EMBER_RANDOM_GEN
+#define _H_EMBER_RANDOM_GEN
 
-using namespace SST::ArielComponent;
+#include "mpi/embermpigen.h"
 
-ArielFreeEvent::ArielFreeEvent(uint64_t vAddr) {
-	virtualAddress = vAddr;
+namespace SST {
+namespace Ember {
+
+class EmberRandomTrafficGenerator : public EmberMessagePassingGenerator {
+
+public:
+	EmberRandomTrafficGenerator(SST::Component* owner, Params& params);
+    	bool generate( std::queue<EmberEvent*>& evQ);
+
+protected:
+	uint32_t maxIterations;
+	uint32_t iteration;
+	uint32_t msgSize;
+
+};
+
+}
 }
 
-ArielFreeEvent::~ArielFreeEvent() {
-
-}
-
-uint64_t ArielFreeEvent::getVirtualAddress() {
-	return virtualAddress;
-}
-
-ArielEventType ArielFreeEvent::getEventType() {
-	return FREE;
-}
+#endif
