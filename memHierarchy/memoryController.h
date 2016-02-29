@@ -96,9 +96,8 @@ private:
     typedef deque<DRAMReq*> dramReq_t;
     
     bool        divertDCLookups_;
-    SST::Link*  lowNetworkLink_;
-    MemNIC*     networkLink_;
-    bool        isNetworkConnected_;
+    SST::Link*  cacheLink_;         // Link to the rest of memHierarchy 
+    MemNIC*     networkLink_;       // Link to the rest of memHierarchy if we're communicating over a network
     MemBackend* backend_;
     int         protocol_;
     dramReq_t   requestQueue_;      // Requests waiting to be issued
@@ -114,17 +113,17 @@ private:
     bool        doNotBack_;
     uint64_t    cacheLineSize_;
     uint64_t    requestWidth_;
-    uint64_t    GetSReqReceived_;
-    uint64_t    GetXReqReceived_;
-    uint64_t    PutMReqReceived_;
-    uint64_t    GetSExReqReceived_;
-    uint64_t    numReqOutstanding_;
-    uint64_t    numCycles_;
     std::vector<CacheListener*> listeners_;
 
     Statistic<uint64_t>* cyclesWithIssue;
     Statistic<uint64_t>* cyclesAttemptIssueButRejected;
     Statistic<uint64_t>* totalCycles;
+    Statistic<uint64_t>* stat_GetSReqReceived;
+    Statistic<uint64_t>* stat_GetXReqReceived;
+    Statistic<uint64_t>* stat_PutMReqReceived;
+    Statistic<uint64_t>* stat_GetSExReqReceived;
+    Statistic<uint64_t>* stat_outstandingReqs;
+
 
     Output::output_location_t statsOutputTarget_;
 //#ifdef HAVE_LIBZ

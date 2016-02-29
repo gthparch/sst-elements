@@ -102,7 +102,7 @@ bool quad::clock(Cycle_t currentCycle) {
         MemEvent *event  = dynamic_cast<MemEvent*>(ev);
         if (NULL == event)
             dbg.fatal(CALL_INFO, -1, "Quad%d got bad event\n", quadID);
-        dbg.debug(_L5_, "Quad%d got req for %p (%" PRIu64 " %d)\n", quadID, (void*)event->getAddr(), event->getID().first, event->getID().second);
+        dbg.debug(_L5_, "Quad%d got req for %p (%" PRIu64 " %d) @%" PRIu64 "\n", quadID, (void*)event->getAddr(), event->getID().first, event->getID().second, currentCycle);
         statTotalTransactionsRecv->addData(1);
 
         unsigned int evQuadID = (event->getAddr() >>  quadIDAddressShift) & quadIDAddressMask;

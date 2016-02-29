@@ -77,6 +77,7 @@ private:
 
     Vault *memorySystem;
     uint64_t CacheLineSize;             // it is used to send stripped address to DRAMSim2
+    int numBitShiftAddressDRAM;
 
     uint8_t *memBuffer;
     memChan_t *memChan;

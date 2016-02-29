@@ -25,7 +25,7 @@ enum {ERROR, WARNING, INFO, L3, L4, L5, L6, L7, L8, L9, L10};
 #define _L3_ CALL_INFO,L3,0                 // Trasaction Support
 #define _L4_ CALL_INFO,L4,0                 // Logic Layer Requests
 #define _L5_ CALL_INFO,L5,0                 // Quad
-#define _L6_ CALL_INFO,L6,0                 // VautlSimC answers
+#define _L6_ CALL_INFO,L6,0                 // VautlSimC answers/receives
 #define _L7_ CALL_INFO,L7,0                 // VaultSimC internals
 #define _L8_ CALL_INFO,L8,0                 // Vault Answers
 #define _L9_ CALL_INFO,L9,0                 // Vault Internal

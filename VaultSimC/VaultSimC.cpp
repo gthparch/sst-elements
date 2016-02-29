@@ -36,7 +36,7 @@ VaultSimC::VaultSimC(ComponentId_t id, Params& params) : IntrospectedComponent( 
     std::string frequency = "1.0 GHz";
     frequency = params.find_string("clock", "1.0 Ghz");
 
-    memChan = configureLink("bus");     //link delay is configurable by python scripts
+    memChan = configureLink("bus", "1ps");     //link delay is configurable by python scripts
 
     int vid = params.find_integer("vault.id", -1);
     if (-1 == vid) 
@@ -59,6 +59,11 @@ VaultSimC::VaultSimC(ComponentId_t id, Params& params) : IntrospectedComponent( 
     dbg.output(CALL_INFO, "VaultSimC %u: made vault %u\n", vaultID, vaultID);
 
     CacheLineSize = params.find_integer("cacheLineSize", 64);
+
+    // Address sent to DRAMSim
+    numBitShiftAddressDRAM = params.find_integer("num_bit_shift_address_dram", 0);
+    dbg.debug(_WARNING_, "*VaultSim%u: Number of bits shift for address that is sent to DRAMSim is %d. "\
+        "Consider vaultID/quadID bit locations\n", vaultID, numBitShiftAddressDRAM);
 }
 
 void VaultSimC::finish() 
@@ -78,7 +83,7 @@ void VaultSimC::readData(unsigned id, uint64_t addr, uint64_t clockcycle)
     MemEvent *event = parentEvent->makeResponse();
 
     memChan->send(event);
-    dbg.debug(_L6_, "VaultSimC %d: read req %p answered in clock=%lu\n", vaultID, (void*)addr, clockcycle);
+    dbg.debug(_L6_, "VaultSimC %d: read req %p answered @%lu\n", vaultID, (void*)addr, clockcycle);
 
     // delete old event
     delete parentEvent;
@@ -98,7 +103,7 @@ void VaultSimC::writeData(unsigned id, uint64_t addr, uint64_t clockcycle)
 
     // send event
     memChan->send(event);
-    dbg.debug(_L6_, "VaultSimC %d: write req %p answered in clock=%lu\n", vaultID, (void*)addr, clockcycle);
+    dbg.debug(_L6_, "VaultSimC %d: write req %p answered @%lu\n", vaultID, (void*)addr, clockcycle);
 
     // delete old event
     delete parentEvent;
@@ -118,11 +123,16 @@ bool VaultSimC::clock(Cycle_t currentCycle)
             dbg.fatal(CALL_INFO, -1, "Vault %d got bad event\n", vaultID);
         }
 
+        // new address for omitting quadID and vaultID bits / also setting lower bits zero to remove DRAMSim Warnings - anyway these bits is never used for mapping inside DRAMSim
+        uint64_t new_addr = (event->getAddr() >> numBitShiftAddressDRAM) & ~((uint64_t)CacheLineSize-1);
+
+        dbg.debug(_L6_, "VaultSimC %d: got a req %p (internal Addr: %p) @%lu\n", vaultID, (void*)event->getAddr(), (void*)new_addr, currentCycle);
+
         //TransactionType transType = convertType( event->getCmd() );
         //dbg.output(CALL_INFO, "transType=%d addr=%p\n", transType, (void*)event->getAddr());
 
         // save the memEvent eventID based on addr so we can respond to it correctly
-        transactionToMemEventMap.insert(pair<uint64_t, MemHierarchy::MemEvent*>(event->getAddr() & ~((uint64_t)CacheLineSize-1), event));
+        transactionToMemEventMap.insert(pair<uint64_t, MemHierarchy::MemEvent*>(new_addr, event));
 
         bool isWrite = false;
         switch(event->getCmd()) {
@@ -139,26 +149,26 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         }
 
         // add to the Q
-        transaction_c transaction (isWrite, event->getAddr() & ~((uint64_t)CacheLineSize-1));
+        transaction_c transaction (isWrite, new_addr & ~((uint64_t)CacheLineSize-1));
 
         #ifdef USE_VAULTSIM_HMC
         uint8_t HMCTypeEvent = event->getHMCInstType();
         transaction.setHmcOpType(HMCTypeEvent);
         if (HMCTypeEvent == HMC_NONE || HMCTypeEvent == HMC_CANDIDATE) {
             transaction.resetAtomic();
-            dbg.debug(_L7_, "VaultSimC %d got a req for %p of type %s in clock=%lu\n", 
+            dbg.debug(_L7_, "VaultSimC %d got a transaction for %p of type %s @%lu\n", 
                     vaultID, (void *)transaction.getAddr(), transaction.getHmcOpTypeStr(), currentCycle);
         }
         else {
             transaction.setAtomic();
             transaction.setIsWrite();   //all hmc ops treat as write
-            dbg.debug(_L7_, "VaultSimC %d got an atomic req for %p of type %s in clock=%lu\n", 
+            dbg.debug(_L7_, "VaultSimC %d got an atomic req for %p of type %s @%lu\n", 
                     vaultID, (void *)transaction.getAddr(), transaction.getHmcOpTypeStr(), currentCycle);
         }
         #else
         transaction.resetAtomic();
-        dbg.debug(_L7_, "VaultSimC %d got a req for %p in clock=%lu (%lu %d)\n", 
-                vaultID, (void*)event->getAddr(), currentCycle, event->getID().first, event->getID().second);
+        dbg.debug(_L7_, "VaultSimC %d got a transaction for %p @%lu (%lu %d)\n", 
+                vaultID, (void*)transaction.getAddr(), currentCycle, event->getID().first, event->getID().second);
         #endif
         
         transQ.push_back(transaction);
@@ -169,11 +179,11 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         // send events off for processing
         transaction_c transaction = transQ.front();
         if ((ret = memorySystem->addTransaction(transaction))) {
-            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s succeeded %p in clock=%lu\n", 
+            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s succeeded %p @%lu\n", 
                     vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), currentCycle);
             transQ.pop_front();
         } else {
-            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s  failed %p in clock=%lu\n", 
+            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s  failed %p @%lu\n", 
                     vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), currentCycle);
             ret = false;
         }

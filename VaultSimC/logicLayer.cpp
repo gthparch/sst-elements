@@ -278,8 +278,8 @@ bool logicLayer::clock(Cycle_t currentCycle)
 
 
     // Check for limits
-    if (toMemory[0] > reqLimit || toMemory[1] > reqLimit || toCpu[0] > reqLimit || toCpu[1] > reqLimit) { //FIXME-currently limit is not working
-        dbg.output(CALL_INFO, "logicLayer%d Bandwdith: %d %d %d %d\n", llID, toMemory[0], toMemory[1], toCpu[0], toCpu[1]);
+    if (toMemory[0] > reqLimit || toMemory[1] > reqLimit || toCpu[0] > reqLimit || toCpu[1] > reqLimit) {
+        dbg.output(CALL_INFO, "logicLayer%d Bandwidth: %d %d %d %d\n", llID, toMemory[0], toMemory[1], toCpu[0], toCpu[1]);
     }
 
     return false;

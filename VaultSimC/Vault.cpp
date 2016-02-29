@@ -67,8 +67,8 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     string idStr = std::to_string(id);
     string traceFilename = "VAULT_" + idStr + "_EPOCHS";
 
-    dbg.output(CALL_INFO, "deviceIniFilename = %s, systemIniFilename = %s, pwd = %s, traceFilename = %s\n", 
-            deviceIniFilename.c_str(), systemIniFilename.c_str(), pwd.c_str(), traceFilename.c_str());
+    dbg.output(CALL_INFO, "deviceIniFilename = %s, systemIniFilename = %s, pwd = %s, traceFilename = %s, size=%u\n",
+            deviceIniFilename.c_str(), systemIniFilename.c_str(), pwd.c_str(), traceFilename.c_str(), ramSize);
 
     memorySystem = DRAMSim::getMemorySystemInstance(deviceIniFilename, systemIniFilename, pwd, traceFilename, ramSize); 
 
@@ -79,6 +79,7 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
 
     memorySystem->RegisterCallbacks(readDataCB, writeDataCB, NULL);
 
+    // Atomics Banks Mapping
     numDramBanksPerRank = 1;
     #ifdef USE_VAULTSIM_HMC
         numDramBanksPerRank = params.find_integer("num_dram_banks_per_rank", 1);
@@ -453,9 +454,9 @@ void Vault::issueAtomicComputePhase(addr2TransactionMap_t::iterator mi)
  **/
 
 void Vault::printStatsForMacSim() {
-    string suffix = "vault_" + to_string(id);
+    string name_ = "vault_" + to_string(id);
     stringstream ss;
-    ss << suffix.c_str() << ".stat.out";
+    ss << name_.c_str() << ".stat.out";
     string filename = ss.str();
 
     ofstream ofs;
@@ -472,19 +473,18 @@ void Vault::printStatsForMacSim() {
     float avgHmcOpsLatencyReadInt = (float)statReadHmcLatencyInt / statTotalHmcOps->getCollectionCount();
     float avgHmcOpsLatencyWriteInt = (float)statWriteHmcLatencyInt / statTotalHmcOps->getCollectionCount();
 
-    writeTo(ofs, suffix, string("total_trans"),                      statTotalTransactions->getCollectionCount());
-    writeTo(ofs, suffix, string("total_HMC_ops"),                    statTotalHmcOps->getCollectionCount());
-    writeTo(ofs, suffix, string("total_non_HMC_ops"),                statTotalNonHmcOps->getCollectionCount());
-    writeTo(ofs, suffix, string("total_HMC_candidate_ops"),          statTotalHmcCandidate->getCollectionCount());
+    writeTo(ofs, name_, string("total_trans"),                      statTotalTransactions->getCollectionCount());
+    writeTo(ofs, name_, string("total_HMC_ops"),                    statTotalHmcOps->getCollectionCount());
+    writeTo(ofs, name_, string("total_non_HMC_ops"),                statTotalNonHmcOps->getCollectionCount());
+    writeTo(ofs, name_, string("total_HMC_candidate_ops"),          statTotalHmcCandidate->getCollectionCount());
     ofs << "\n";
-    writeTo(ofs, suffix, string("total_hmc_confilict_happened"),     statTotalHmcConfilictHappened->getCollectionCount());
+    writeTo(ofs, name_, string("total_hmc_confilict_happened"),     statTotalHmcConfilictHappened->getCollectionCount());
     ofs << "\n";
-    writeTo(ofs, suffix, string("total_non_HMC_read"),               statTotalNonHmcRead->getCollectionCount());
-    writeTo(ofs, suffix, string("total_non_HMC_write"),              statTotalNonHmcWrite->getCollectionCount());
+    writeTo(ofs, name_, string("total_non_HMC_read"),               statTotalNonHmcRead->getCollectionCount());
+    writeTo(ofs, name_, string("total_non_HMC_write"),              statTotalNonHmcWrite->getCollectionCount());
     ofs << "\n";
-    writeTo(ofs, suffix, string("avg_HMC_ops_latency_total"),        avgHmcOpsLatencyTotalInt);
-    writeTo(ofs, suffix, string("avg_HMC_ops_latency_issue"),        avgHmcOpsLatencyIssueInt);
-    writeTo(ofs, suffix, string("avg_HMC_ops_latency_read"),         avgHmcOpsLatencyReadInt);
-    writeTo(ofs, suffix, string("avg_HMC_ops_latency_write"),        avgHmcOpsLatencyWriteInt);    
+    writeTo(ofs, name_, string("avg_HMC_ops_latency_total"),        avgHmcOpsLatencyTotalInt);
+    writeTo(ofs, name_, string("avg_HMC_ops_latency_issue"),        avgHmcOpsLatencyIssueInt);
+    writeTo(ofs, name_, string("avg_HMC_ops_latency_read"),         avgHmcOpsLatencyReadInt);
+    writeTo(ofs, name_, string("avg_HMC_ops_latency_write"),        avgHmcOpsLatencyWriteInt);    
 }
-
