@@ -83,10 +83,10 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
   unsigned latency = 0;
 
   if (sourceIdx == destinationIdx) {
-    latency = m_local_latency;
+    latency = m_localLatency;
     ++m_local_accesses[sourceIdx];
   } else {
-    latency = m_remote_latency;
+    latency = m_remoteLatency;
     ++m_remote_accesses[sourceIdx];
   }
 
@@ -118,11 +118,11 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
   uint64_t roundTripTime = 0;
 
   if (sourceIdx == destinationIdx) {
-    latency = m_local_latency;
+    latency = m_localLatency;
     roundTripTime = m_currentCycle + latency - m_latencyMaps[destinationIdx][flatAddress];
     m_local_access_latencies[destinationIdx] += roundTripTime;
   } else {
-    latency = m_remote_latency;
+    latency = m_remoteLatency;
     roundTripTime = m_currentCycle + latency - m_latencyMaps[destinationIdx][flatAddress];
     m_remote_access_latencies[destinationIdx] += roundTripTime;
   }
@@ -279,20 +279,35 @@ void MyNetwork::configureParameters(SST::Params& params)
     DEBUG_ALL = false;
   }
 
-  m_local_latency = params.find_integer("local_latency", 1);
-  m_remote_latency = params.find_integer("remote_latency", 1);
-  string frequency = params.find_string("frequency", "1 GHz");
-  
   /** Multiply Frequency times two.  
     * This is because an SST MyNetwork components has 2 SST Links (highNet & LowNet) and thus 
     * it takes a least 2 cycles for any transaction (a real bus should be allowed to have 1 cycle latency).  
     * To overcome this we clock the bus 2x the speed of the cores 
    **/
-
+  string frequency = params.find_string("frequency", "1 GHz");
   UnitAlgebra uA = UnitAlgebra(frequency);
   uA = uA * 2;
   frequency = uA.toString();
-  
+
+  m_packetSize = params.find_integer("packet_size", 64);
+
+  unsigned PIMInternalBandwidth = params.find_integer("pim_local_bandwidth", 1024);
+  unsigned hostPIMBandwidth = params.find_integer("host_pim_bandwidth", 512);
+  unsigned interPIMBandwidth = params.find_integer("inter_pim_bandwidth", 128);
+
+  float frequencyInGHz = (float)(uA.getRoundedValue()) / (float)(UnitAlgebra("1GHz").getRoundedValue());
+
+  m_maxPacketPIMInternal = (unsigned)((float)PIMInternalBandwidth / frequencyInGHz / m_packetSize);
+  m_maxPacketHostPIM = (unsigned)((float)hostPIMBandwidth / frequencyInGHz / m_packetSize);
+  m_maxPacketInterPIM = (unsigned)((float)interPIMBandwidth / frequencyInGHz / m_packetSize);
+
+  m_dbg.debug(_L10_, "Max packets per cycle for PIM-internal communication: %u\n", m_maxPacketPIMInternal);
+  m_dbg.debug(_L10_, "Max packets per cycle for Host-PIM communication: %u\n", m_maxPacketHostPIM);
+  m_dbg.debug(_L10_, "Max packets per cycle for inter-PIM communication: %u\n", m_maxPacketInterPIM);
+
+  m_localLatency = params.find_integer("local_latency", 1);
+  m_remoteLatency = params.find_integer("remote_latency", 1);
+
   Clock::Handler<MyNetwork>* clockHandler = new Clock::Handler<MyNetwork>(this, &MyNetwork::clockTick);
   registerClock(frequency, clockHandler);
 

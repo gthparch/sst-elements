@@ -116,11 +116,17 @@ private:
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
+  unsigned m_packetSize;
+
+  unsigned m_maxPacketPIMInternal;
+  unsigned m_maxPacketInterPIM;
+  unsigned m_maxPacketHostPIM;
+
   vector<map<SST::Event*, uint64_t>> m_requestQueues;
   vector<map<SST::Event*, uint64_t>> m_responseQueues;
 
-  unsigned m_local_latency;
-  unsigned m_remote_latency;
+  unsigned m_localLatency;
+  unsigned m_remoteLatency;
 
   vector<SST::Link*> m_highNetPorts;
   vector<SST::Link*> m_lowNetPorts;
