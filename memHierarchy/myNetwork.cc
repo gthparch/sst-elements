@@ -1,5 +1,6 @@
 #include <sstream>
 #include <csignal>
+#include <cassert>
 #include <boost/variant.hpp>
 #include <sst_config.h>
 #include <sst/core/serialization.h>
@@ -149,6 +150,13 @@ bool MyNetwork::clockTick(Cycle_t time)
           m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::ip)], stackIdx);
       //m_dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  requests/responses to/from PIM[%u]\n", 
       //m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::hp)], stackIdx);
+    }
+  }
+
+  for (unsigned stackIdx = 0; stackIdx < m_numStack; stackIdx++) {
+    for (unsigned accessTypeIdx = 0; accessTypeIdx <
+        static_cast<unsigned>(access_type::max); accessTypeIdx++) {
+      m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx][m_packetCounters[stackIdx][accessTypeIdx]] += 1;
     }
   }
 
@@ -466,6 +474,22 @@ void MyNetwork::init(unsigned int phase)
 
 void MyNetwork::finish()
 {
+  // sanity check for histogram
+  for (unsigned stackIdx = 0; stackIdx < m_numStack; stackIdx++) {
+    for (unsigned accessTypeIdx = 0; accessTypeIdx <
+        static_cast<unsigned>(access_type::max); accessTypeIdx++) {
+      uint64_t totalCycle = 0;
+      for (auto histogramIterator =
+          m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx].begin();
+          histogramIterator !=
+          m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx].end();
+          histogramIterator++) {
+        totalCycle += histogramIterator->second;
+      }
+      assert(totalCycle == m_currentCycle);
+    }
+  }
+
   printStats();
 }
 
@@ -494,7 +518,7 @@ void MyNetwork::resetPacketCounter()
 
 void MyNetwork::initStats()
 {
-  for (int i = 0; i < m_numStack; ++i) {
+  for (int stackIdx = 0; stackIdx < m_numStack; ++stackIdx) {
     m_local_accesses.push_back(0);
     m_remote_accesses.push_back(0);
     m_local_access_latencies.push_back(0);
@@ -505,8 +529,14 @@ void MyNetwork::initStats()
     m_per_core_accesses.push_back(vector<uint64_t>());
     m_per_stack_accesses.push_back(vector<uint64_t>());
     for (int j = 0; j < m_numStack; ++j) {
-      m_per_core_accesses[i].push_back(0);
-      m_per_stack_accesses[i].push_back(0);
+      m_per_core_accesses[stackIdx].push_back(0);
+      m_per_stack_accesses[stackIdx].push_back(0);
+    }
+
+    m_bandwidthUtilizationHistogram.push_back(vector<map<unsigned, uint64_t>>());
+    for (unsigned accessTypeIdx = 0; accessTypeIdx <
+        static_cast<unsigned>(access_type::max); accessTypeIdx++) {
+      m_bandwidthUtilizationHistogram[stackIdx].push_back(map<unsigned, uint64_t>());
     }
   }
 }
@@ -523,28 +553,49 @@ void MyNetwork::printStats()
   ofs.open(filename.c_str(), std::ios_base::out);
 
   stringstream stat_name;
-  for (int i = 0; i < m_numStack; ++i) {
-    stat_name.str(string()); stat_name << "local_accesses_core_" << i;
-    writeTo(ofs, m_name, stat_name.str(), m_local_accesses[i]);
-    stat_name.str(string()); stat_name << "remote_accesses_core_" << i;
-    writeTo(ofs, m_name, stat_name.str(), m_remote_accesses[i]);
+  uint64_t count;
+  for (unsigned stackIdx = 0; stackIdx < m_numStack; ++stackIdx) {
+    stat_name.str(string()); stat_name << "local_accesses_core_" << stackIdx;
+    count = m_local_accesses[stackIdx];
+    writeTo(ofs, m_name, stat_name.str(), count, count);
+    stat_name.str(string()); stat_name << "remote_accesses_core_" << stackIdx;
+    count = m_remote_accesses[stackIdx];
+    writeTo(ofs, m_name, stat_name.str(), count, count);
 
-    for (int j = 0; j < m_numStack; ++j) {
-      stat_name.str(string()); stat_name << "requests_from_core_" << i << "_to_stack_" << j;
-      writeTo(ofs, m_name, stat_name.str(), m_per_stack_accesses[i][j]);
+    for (unsigned j = 0; j < m_numStack; ++j) {
+      stat_name.str(string()); stat_name << "requests_from_core_" << stackIdx << "_to_stack_" << j;
+      count = m_per_stack_accesses[stackIdx][j];
+      writeTo(ofs, m_name, stat_name.str(), count, count);
     }
 
-    for (int j = 0; j < m_numStack; ++j) {
-      stat_name.str(string()); stat_name << "responses_from_stack_" << i << "_to_core_" << j;
-      writeTo(ofs, m_name, stat_name.str(), m_per_core_accesses[i][j]);
+    for (unsigned j = 0; j < m_numStack; ++j) {
+      stat_name.str(string()); stat_name << "responses_from_stack_" << stackIdx << "_to_core_" << j;
+      count = m_per_core_accesses[stackIdx][j];
+      writeTo(ofs, m_name, stat_name.str(), count, count);
     }
 
-    stat_name.str(string()); stat_name << "local_access_avg_latency_core_" << i;
-    writeTo(ofs, m_name, stat_name.str(), (m_local_accesses[i] > 0) ?
-        m_local_access_latencies[i] / m_local_accesses[i] : 0);
-    stat_name.str(string()); stat_name << "remote_access_avg_latency_core_" << i;
-    writeTo(ofs, m_name, stat_name.str(), (m_remote_accesses[i] > 0) ?
-        m_remote_access_latencies[i] / m_remote_accesses[i] : 0);
+    stat_name.str(string()); stat_name << "local_access_avg_latency_core_" << stackIdx;
+    count = (m_local_accesses[stackIdx] > 0) ?
+      m_local_access_latencies[stackIdx] / m_local_accesses[stackIdx] : 0;
+    writeTo(ofs, m_name, stat_name.str(), count, count);
+    stat_name.str(string()); stat_name << "remote_access_avg_latency_core_" << stackIdx;
+    count = (m_remote_accesses[stackIdx] > 0) ?
+      m_remote_access_latencies[stackIdx] / m_remote_accesses[stackIdx] : 0;
+    writeTo(ofs, m_name, stat_name.str(), count, count);
+
+    uint64_t cycle = 0;
+    float percent = 0.0f;
+    for (unsigned accessTypeIdx = 0; accessTypeIdx <
+        static_cast<unsigned>(access_type::max); accessTypeIdx++) {
+      for (auto histogramIterator = m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx].begin();
+          histogramIterator != m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx].end();
+          histogramIterator++) {
+        stat_name.str(string()); stat_name << access_type_name[accessTypeIdx] << "_PIM_" << stackIdx << "_" << histogramIterator->first;
+        cycle = histogramIterator->second;
+        percent = 100*((float)cycle)/m_currentCycle;
+        writeTo(ofs, m_name, stat_name.str(), cycle, percent);
+      }
+    }
 
     ofs << endl;
   }

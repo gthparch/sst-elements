@@ -100,8 +100,8 @@ private:
   void printStats();
 
   // Helper function for printing statistics in MacSim format
-  template<typename T>
-  void writeTo(ofstream &stream, string prefix, string name, T count)
+  template<typename T1, typename T2>
+  void writeTo(ofstream &stream, string prefix, string name, T1 count1, T2 count2)
   {
     #define FILED1_LENGTH 45
     #define FILED2_LENGTH 20
@@ -111,11 +111,19 @@ private:
     string capitalized_prefixed_name = boost::to_upper_copy(prefix + "_" + name);
     stream << setw(FILED1_LENGTH) << capitalized_prefixed_name;
     stream.setf(ios::right, ios::adjustfield);
-    stream << setw(FILED2_LENGTH) << count << setw(FILED3_LENGTH) << count << endl << endl;
+    stream << setw(FILED2_LENGTH) << count1;
+    stream << setw(FILED3_LENGTH) << count2;
+    if (count1 == count2) // regular
+      stream << endl;
+    else // percent
+      stream << '%';
+    stream << endl;
   }
 
 private:
   enum class access_type { pl = 0, ip, hp, max };
+  const string access_type_name[static_cast<unsigned>(access_type::max)] = {
+    "PIM_LOCAL", "INTER_PIM", "HOST_PIM" };
 
   Output m_dbg;
   bool DEBUG_ALL;
@@ -149,12 +157,21 @@ private:
 
   vector<map<uint64_t, uint64_t>> m_latencyMaps;
 
+  // per-stack local access counter
   vector<uint64_t> m_local_accesses;
+  // per-stack remote access counter
   vector<uint64_t> m_remote_accesses;
+  // per-stack local access latency accumulator
   vector<uint64_t> m_local_access_latencies;
+  // per-stack remote access latency accumulator
   vector<uint64_t> m_remote_access_latencies;
-  vector<vector<uint64_t>> m_per_core_accesses; // count the number of requests from each core from each stack's point of view
-  vector<vector<uint64_t>> m_per_stack_accesses; // count the number of requests sent to each stack from each core's point of view
+  // count the number of requests from each core from each stack's point of view
+  vector<vector<uint64_t>> m_per_core_accesses; 
+  // count the number of requests sent to each stack from each core's point of view
+  vector<vector<uint64_t>> m_per_stack_accesses; 
+
+  // per-stack per-access-type bandwidth utilization histogram
+  vector<vector<map<unsigned, uint64_t>>> m_bandwidthUtilizationHistogram; 
 };
 
 }}
