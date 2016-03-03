@@ -93,6 +93,29 @@ private:
   uint64_t convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart);
   uint64_t convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart);
 
+  void initializePacketCounter()
+  {
+    // enum class access_type { pl = 0, ip, hp, max };
+    for (unsigned stackIdx = 0; stackIdx < m_numStack; ++stackIdx) {
+      m_packetCounters.push_back(vector<unsigned>());
+      for (unsigned accessTypeIdx = 0; accessTypeIdx <
+          static_cast<unsigned>(access_type::max); accessTypeIdx++) {
+        m_packetCounters[stackIdx].push_back(0);
+      }
+    }
+  }
+
+  void resetPacketCounter() 
+  {
+    for (auto packetCounterIterator = m_packetCounters.begin();
+        packetCounterIterator < m_packetCounters.end(); packetCounterIterator++) {
+      for (auto accessTypeIterator = packetCounterIterator->begin();
+          accessTypeIterator < packetCounterIterator->end(); accessTypeIterator++) {
+        *accessTypeIterator = 0;
+      }
+    }
+  }
+
   void initStats();
   void printStats();
 
@@ -112,18 +135,19 @@ private:
   }
 
 private:
+  enum class access_type { pl = 0, ip, hp, max };
+
   Output m_dbg;
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
   unsigned m_packetSize;
 
-  unsigned m_maxPacketPIMInternal;
-  unsigned m_maxPacketInterPIM;
-  unsigned m_maxPacketHostPIM;
-
   vector<map<SST::Event*, uint64_t>> m_requestQueues;
   vector<map<SST::Event*, uint64_t>> m_responseQueues;
+
+  map<access_type, unsigned> m_maxPacketPerCycle;
+  vector<vector<unsigned>> m_packetCounters;
 
   unsigned m_localLatency;
   unsigned m_remoteLatency;
