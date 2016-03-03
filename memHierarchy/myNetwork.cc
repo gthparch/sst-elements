@@ -279,23 +279,14 @@ void MyNetwork::configureParameters(SST::Params& params)
     DEBUG_ALL = false;
   }
 
-  /** Multiply Frequency times two.  
-    * This is because an SST MyNetwork components has 2 SST Links (highNet & LowNet) and thus 
-    * it takes a least 2 cycles for any transaction (a real bus should be allowed to have 1 cycle latency).  
-    * To overcome this we clock the bus 2x the speed of the cores 
-   **/
-  string frequency = params.find_string("frequency", "1 GHz");
-  UnitAlgebra uA = UnitAlgebra(frequency);
-  uA = uA * 2;
-  frequency = uA.toString();
-
   m_packetSize = params.find_integer("packet_size", 64);
 
   unsigned PIMInternalBandwidth = params.find_integer("pim_local_bandwidth", 1024);
   unsigned hostPIMBandwidth = params.find_integer("host_pim_bandwidth", 512);
   unsigned interPIMBandwidth = params.find_integer("inter_pim_bandwidth", 128);
 
-  float frequencyInGHz = (float)(uA.getRoundedValue()) / (float)(UnitAlgebra("1GHz").getRoundedValue());
+  string frequency = params.find_string("frequency", "1 GHz");
+  float frequencyInGHz = (float)(UnitAlgebra(frequency).getRoundedValue()) / (float)(UnitAlgebra("1GHz").getRoundedValue());
 
   m_maxPacketPIMInternal = (unsigned)((float)PIMInternalBandwidth / frequencyInGHz / m_packetSize);
   m_maxPacketHostPIM = (unsigned)((float)hostPIMBandwidth / frequencyInGHz / m_packetSize);
