@@ -94,7 +94,12 @@ bool MyNetwork::clockTick(Cycle_t time)
 
         sendResponse(ev);
         responseQueueIterator->erase(responseIterator);
-        m_packetCounters[stackIdx][static_cast<unsigned>(accessType)] += 1;
+
+        assert(stackIdx == sourceIdx);
+        m_packetCounters[sourceIdx][static_cast<unsigned>(accessType)] += 1;
+        if (sourceIdx != destinationIdx)
+          m_packetCounters[destinationIdx][static_cast<unsigned>(accessType)] += 1;
+
         numResponseSentThisCycle++;
       }
     }
@@ -138,7 +143,12 @@ bool MyNetwork::clockTick(Cycle_t time)
 
         sendRequest(ev);
         requestQueueIterator->erase(requestIterator);
+
+        assert(stackIdx == sourceIdx);
         m_packetCounters[stackIdx][static_cast<unsigned>(accessType)] += 1;
+        if (sourceIdx != destinationIdx)
+          m_packetCounters[destinationIdx][static_cast<unsigned>(accessType)] += 1;
+
         numRequestSentThisCycle++;
       }
     }
@@ -249,8 +259,10 @@ void MyNetwork::sendRequest(SST::Event* ev)
         m_memoryMap[destinationLinkId]->getRangeStart()));
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " currentCycle: %" PRIu64 "\n", 
-        CommandString[me->getCmd()], me->getAddr(), m_currentCycle);
+    unsigned sourceIdx = m_highNetIdxMap[me->getDeliveryLink()->getId()];
+    unsigned destinationIdx = m_lowNetIdxMap[lookupNode(me->getAddr())];
+    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
+        CommandString[me->getCmd()], me->getAddr(), m_currentCycle, sourceIdx, destinationIdx);
   }
 
   destinationLink->send(forwardEvent);
@@ -271,8 +283,10 @@ void MyNetwork::sendResponse(SST::Event* ev)
         m_memoryMap[me->getDeliveryLink()->getId()]->getRangeStart()));
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " currentCycle: %" PRIu64 "\n", 
-        CommandString[me->getCmd()], me->getAddr(), m_currentCycle);
+    unsigned sourceIdx = m_lowNetIdxMap[me->getDeliveryLink()->getId()];
+    unsigned destinationIdx = m_highNetIdxMap[lookupNode(me->getDst())];
+    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
+        CommandString[me->getCmd()], me->getAddr(), m_currentCycle, sourceIdx, destinationIdx);
   }
 
   destinationLink->send(forwardEvent);
