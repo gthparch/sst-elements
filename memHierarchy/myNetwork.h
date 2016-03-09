@@ -95,6 +95,9 @@ private:
 
   void initializePacketCounter();
   void resetPacketCounter();
+
+  bool isLocalAccess(LinkId_t src, LinkId_t dst) { return (dst == m_localPortMap[src]); }
+  unsigned getStackIdx(LinkId_t lid) { return m_portToStackMap[lid]; }
   
   void initStats();
   void printStats();
@@ -123,7 +126,8 @@ private:
 private:
   enum class access_type { pl = 0, ip, hp, max };
   const string access_type_name[static_cast<unsigned>(access_type::max)] = {
-    "PIM_LOCAL", "INTER_PIM", "HOST_PIM" };
+    "PIM_LOCAL", "INTER_PIM", "HOST_PIM" 
+  };
 
   Output m_dbg;
   bool DEBUG_ALL;
@@ -131,7 +135,9 @@ private:
 
   unsigned m_packetSize;
 
+  // per-stack request queue; request and its ready cycle
   vector<map<SST::Event*, uint64_t>> m_requestQueues;
+  // per-stack response queue; response and its ready cycle
   vector<map<SST::Event*, uint64_t>> m_responseQueues;
 
   map<access_type, unsigned> m_maxPacketPerCycle;
@@ -142,11 +148,13 @@ private:
 
   vector<SST::Link*> m_highNetPorts;
   vector<SST::Link*> m_lowNetPorts;
+
   map<string, LinkId_t> m_nameMap;
-  map<LinkId_t, SST::Link*> m_linkIdMap;
   map<LinkId_t, MemoryCompInfo*> m_memoryMap;
-  map<LinkId_t, unsigned> m_highNetIdxMap;
-  map<LinkId_t, unsigned> m_lowNetIdxMap;
+
+  map<LinkId_t, LinkId_t> m_localPortMap;
+  map<LinkId_t, unsigned> m_portToStackMap;
+  map<LinkId_t, SST::Link*> m_linkIdMap;
 
   unsigned m_numStack;
   uint64_t m_interleaveSize;
@@ -155,20 +163,18 @@ private:
   uint64_t m_currentCycle;
   string m_name;
 
+  // statistics
+  //
   vector<map<uint64_t, uint64_t>> m_latencyMaps;
 
-  // per-stack local access counter
-  vector<uint64_t> m_local_accesses;
-  // per-stack remote access counter
-  vector<uint64_t> m_remote_accesses;
-  // per-stack local access latency accumulator
-  vector<uint64_t> m_local_access_latencies;
-  // per-stack remote access latency accumulator
-  vector<uint64_t> m_remote_access_latencies;
-  // count the number of requests from each core from each stack's point of view
-  vector<vector<uint64_t>> m_per_core_accesses; 
-  // count the number of requests sent to each stack from each core's point of view
-  vector<vector<uint64_t>> m_per_stack_accesses; 
+  // per-stack local request latency accumulator
+  vector<uint64_t> m_localRequestLatencies;
+  // per-stack remote request latency accumulator
+  vector<uint64_t> m_remoteRequestLatencies;
+  // per-stack request counter
+  vector<vector<uint64_t>> m_perStackRequests; 
+  // per-stack response counter
+  vector<vector<uint64_t>> m_perStackResponses; 
 
   // per-stack per-access-type bandwidth utilization histogram
   vector<vector<map<unsigned, uint64_t>>> m_bandwidthUtilizationHistogram; 
