@@ -39,16 +39,16 @@ private:
     {
       m_rangeStart = interleaveSize * idx;
       m_rangeEnd = stackSize * numStack - interleaveSize * (numStack - idx - 1);
-      m_interleaveSize = interleaveSize;
+      interleaveSize = interleaveSize;
       m_interleaveStep = interleaveSize * numStack;
     }
     
     bool contains(uint64_t addr) const 
     {
       if (addr < m_rangeStart || m_rangeEnd <= addr) return false;
-      if (m_interleaveSize == 0) return true;
+      if (interleaveSize == 0) return true;
       uint64_t offset = (addr - m_rangeStart) % m_interleaveStep;
-      return (offset < m_interleaveSize);
+      return (offset < interleaveSize);
     }
 
     bool operator<(const MemoryCompInfo &m) const 
@@ -58,19 +58,19 @@ private:
 
     friend ostream& operator<<(ostream& os, const MemoryCompInfo& mci)
     {
-      os << "range (" << mci.m_rangeStart << ", " << mci.m_rangeEnd << ") interleaveSize: " << mci.m_interleaveSize;
+      os << "range (" << mci.m_rangeStart << ", " << mci.m_rangeEnd << ") interleaveSize: " << mci.interleaveSize;
       return os;
     }
 
     uint64_t getRangeStart(void) const { return m_rangeStart; }
     uint64_t getRangeEnd(void) const { return m_rangeEnd; }
-    uint64_t getInterleaveSize(void) const { return m_interleaveSize; }
+    uint64_t getInterleaveSize(void) const { return interleaveSize; }
     uint64_t getInterleaveStep(void) const { return m_interleaveStep; }
 
   private:
     uint64_t m_rangeStart;
     uint64_t m_rangeEnd;
-    uint64_t m_interleaveSize;
+    uint64_t interleaveSize;
     uint64_t m_interleaveStep;
   };
 
@@ -96,8 +96,11 @@ private:
   void initializePacketCounter();
   void resetPacketCounter();
 
-  bool isLocalAccess(LinkId_t src, LinkId_t dst) { return (dst == m_localPortMap[src]); }
-  unsigned getStackIdx(LinkId_t lid) { return m_portToStackMap[lid]; }
+  bool isLocalAccess(LinkId_t src, LinkId_t dst) { return (dst == localPortMap[src]); }
+  unsigned getStackIdx(LinkId_t lid) { return portToStackMap[lid]; }
+  SST::Link* getLink(LinkId_t lid) { return linkIdToLinkMap[lid]; }
+  MemoryCompInfo* getMemoryCompInfo(LinkId_t lid) { return linkToMemoryCompInfoMap[lid]; }
+
   
   void initStats();
   void printStats();
@@ -124,60 +127,75 @@ private:
   }
 
 private:
-  enum class access_type { pl = 0, ip, hp, max };
-  const string access_type_name[static_cast<unsigned>(access_type::max)] = {
+  enum class AccessType { pl = 0, ip, hp, max };
+  const string AccessTypeName[static_cast<unsigned>(AccessType::max)] = {
     "PIM_LOCAL", "INTER_PIM", "HOST_PIM" 
   };
 
-  Output m_dbg;
+  Output dbg;
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
-  unsigned m_packetSize;
+  unsigned packetSize;
 
   // per-stack request queue; request and its ready cycle
-  vector<map<SST::Event*, uint64_t>> m_requestQueues;
+  vector<map<SST::Event*, uint64_t>> requestQueues;
   // per-stack response queue; response and its ready cycle
-  vector<map<SST::Event*, uint64_t>> m_responseQueues;
+  vector<map<SST::Event*, uint64_t>> responseQueues;
 
-  map<access_type, unsigned> m_maxPacketPerCycle;
-  vector<vector<unsigned>> m_packetCounters;
+  map<AccessType, unsigned> maxPacketPerCycle;
+  vector<vector<unsigned>> packetCounters;
 
-  unsigned m_localLatency;
-  unsigned m_remoteLatency;
+  // monolithic latency value used in 1-to-N or N-to-1 configuration
+  unsigned latency;
 
-  vector<SST::Link*> m_highNetPorts;
-  vector<SST::Link*> m_lowNetPorts;
+  unsigned localLatency;
+  unsigned remoteLatency;
 
-  map<string, LinkId_t> m_nameMap;
-  map<LinkId_t, MemoryCompInfo*> m_memoryMap;
+  vector<SST::Link*> highNetPorts;
+  vector<SST::Link*> lowNetPorts;
 
-  map<LinkId_t, LinkId_t> m_localPortMap;
-  map<LinkId_t, unsigned> m_portToStackMap;
-  map<LinkId_t, SST::Link*> m_linkIdMap;
+  map<string, LinkId_t> nameToLinkIdMap;
+  map<LinkId_t, MemoryCompInfo*> linkToMemoryCompInfoMap;
 
-  unsigned m_numStack;
-  uint64_t m_interleaveSize;
-  uint64_t m_stackSize;
+  map<LinkId_t, LinkId_t> localPortMap;
+  map<LinkId_t, unsigned> portToStackMap;
+  map<LinkId_t, SST::Link*> linkIdToLinkMap;
 
-  uint64_t m_currentCycle;
-  string m_name;
+  unsigned numCore;
+  unsigned numStack;
 
+  uint64_t interleaveSize;
+  uint64_t stackSize;
+
+  uint64_t currentCycle;
+  
   // statistics
   //
-  vector<map<uint64_t, uint64_t>> m_latencyMaps;
+  // latency map used in 1-to-N or N-to-1 configuration
+  map<uint64_t, uint64_t> latencyMap;
+  // per-stack latency map
+  vector<map<uint64_t, uint64_t>> perStackLatencyMaps;
 
+  // monolithic latency accumulator used in 1-to-N or N-to-1 configuration
+  uint64_t latencies;
   // per-stack local request latency accumulator
-  vector<uint64_t> m_localRequestLatencies;
+  vector<uint64_t> localRequestLatencies;
   // per-stack remote request latency accumulator
-  vector<uint64_t> m_remoteRequestLatencies;
+  vector<uint64_t> remoteRequestLatencies;
+  
+  // request counter used in 1-to-N or N-to-1 configuration
+  vector<uint64_t> requests;
+  // response counter used in 1-to-N or N-to-1 configuration
+  vector<uint64_t> responses;
+
   // per-stack request counter
-  vector<vector<uint64_t>> m_perStackRequests; 
+  vector<vector<uint64_t>> perStackRequests; 
   // per-stack response counter
-  vector<vector<uint64_t>> m_perStackResponses; 
+  vector<vector<uint64_t>> perStackResponses; 
 
   // per-stack per-access-type bandwidth utilization histogram
-  vector<vector<map<unsigned, uint64_t>>> m_bandwidthUtilizationHistogram; 
+  vector<vector<map<unsigned, uint64_t>>> bandwidthUtilizationHistogram; 
 };
 
 }}

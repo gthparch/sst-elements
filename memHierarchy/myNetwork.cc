@@ -16,27 +16,30 @@ using namespace SST::MemHierarchy;
 
 MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 {
-  m_name = this->Component::getName();
-  m_currentCycle = 0;
+  name = this->Component::getName();
+  currentCycle = 0;
 
   configureParameters(params);
   configureLinks();
 
-  for (unsigned i = 0; i < m_numStack; i++) {
-    // store local port info
-    m_localPortMap[m_highNetPorts[i]->getId()] = m_lowNetPorts[i]->getId();
-    m_localPortMap[m_lowNetPorts[i]->getId()] = m_highNetPorts[i]->getId();
-    m_portToStackMap[m_highNetPorts[i]->getId()] = i;
-    m_portToStackMap[m_lowNetPorts[i]->getId()] = i;
+  for (unsigned i = 0; i < numStack; i++) {
+    // PIM Mode
+    if (numCore > 1 && numStack > 1 && numCore == numStack) {
+      // store local port info
+      localPortMap[highNetPorts[i]->getId()] = lowNetPorts[i]->getId();
+      localPortMap[lowNetPorts[i]->getId()] = highNetPorts[i]->getId();
+      portToStackMap[highNetPorts[i]->getId()] = i;
+      portToStackMap[lowNetPorts[i]->getId()] = i;
+    }
 
     // initialize memory component info 
-    MemoryCompInfo *mci = new MemoryCompInfo(i, m_numStack, m_stackSize, m_interleaveSize);
-    m_memoryMap[m_lowNetPorts[i]->getId()] = mci;
+    MemoryCompInfo *mci = new MemoryCompInfo(i, numStack, stackSize, interleaveSize);
+    linkToMemoryCompInfoMap[lowNetPorts[i]->getId()] = mci;
     cout << *mci << endl;
 
     // initialize per-stack request and response queues
-    m_requestQueues.push_back(map<SST::Event*, uint64_t>());
-    m_responseQueues.push_back(map<SST::Event*, uint64_t>());
+    requestQueues.push_back(map<SST::Event*, uint64_t>());
+    responseQueues.push_back(map<SST::Event*, uint64_t>());
   }
 
   initializePacketCounter();
@@ -44,8 +47,8 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 
 MyNetwork::~MyNetwork() 
 {
-  for_each(m_memoryMap.begin(), m_memoryMap.end(), 
-      [] (pair<LinkId_t, MemoryCompInfo*>&& it) { delete it.second; });
+  for_each(linkToMemoryCompInfoMap.begin(), linkToMemoryCompInfoMap.end(), [] (pair<LinkId_t, 
+    MemoryCompInfo*>&& it) { delete it.second; });
 }
 
 /** 
@@ -61,110 +64,167 @@ MyNetwork::~MyNetwork()
  */
 bool MyNetwork::clockTick(Cycle_t time) 
 {
-  m_currentCycle++;
+  currentCycle++;
   resetPacketCounter();
 
-  unsigned stackIdx = m_currentCycle % m_numStack;
-  m_dbg.debug(_L9_, "currentCycle:%" PRIu64 " start scheduling from PIM[%u]\n", m_currentCycle, stackIdx);
-  for (unsigned counter = 0; counter < m_numStack; counter++) {
-    unsigned numResponseSentThisCycle = 0;
-    for (auto& response : m_responseQueues[stackIdx] ) {
-      uint64_t readyCycle = response.second;
-      if (readyCycle < m_currentCycle) { 
-        SST::Event* ev = response.first;
+  // PIM Mode
+  if (likely(numCore > 1 && numStack > 1 && numCore == numStack)) {
+    unsigned stackIdx = currentCycle % numStack;
+    dbg.debug(_L9_, "currentCycle:%" PRIu64 " start scheduling from PIM[%u]\n", currentCycle, stackIdx);
+    for (unsigned counter = 0; counter < numStack; counter++) {
+      unsigned numResponseSentThisCycle = 0;
+      for (auto& response : responseQueues[stackIdx]) {
+        uint64_t readyCycle = response.second;
+        if (readyCycle < currentCycle) { 
+          SST::Event* ev = response.first;
 
-        // This is for bandwidth control
-        MemEvent *me = static_cast<MemEvent*>(ev);
-        LinkId_t srcLinkId = me->getDeliveryLink()->getId();
-        LinkId_t dstLinkId = lookupNode(me->getDst());
-        access_type accessType = isLocalAccess(srcLinkId, dstLinkId) ?
-          access_type::pl : access_type::ip;
+          // This is for bandwidth control
+          MemEvent *me = static_cast<MemEvent*>(ev);
+          LinkId_t srcLinkId = me->getDeliveryLink()->getId();
+          LinkId_t dstLinkId = lookupNode(me->getDst());
+          AccessType accessType = isLocalAccess(srcLinkId, dstLinkId) ?
+            AccessType::pl : AccessType::ip;
 
-        // if saturated, don't send any more response to the corresponding
-        // accessType
-        if (m_maxPacketPerCycle[accessType] <=
-            m_packetCounters[stackIdx][static_cast<unsigned>(accessType)])
-          continue;
+          // if saturated, don't send any more response to the corresponding
+          // accessType
+          if (maxPacketPerCycle[accessType] <=
+              packetCounters[stackIdx][static_cast<unsigned>(accessType)])
+            continue;
 
-        sendResponse(ev);
-        m_responseQueues[stackIdx].erase(m_responseQueues[stackIdx].find(ev));
+          sendResponse(ev);
+          responseQueues[stackIdx].erase(responseQueues[stackIdx].find(ev));
 
-        unsigned srcStackIdx = getStackIdx(srcLinkId);
-        unsigned dstStackIdx = getStackIdx(dstLinkId);
-        if (accessType == access_type::pl) {
-          m_packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-        } else {
-          m_packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-          m_packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
+          unsigned srcStackIdx = getStackIdx(srcLinkId);
+          unsigned dstStackIdx = getStackIdx(dstLinkId);
+          if (accessType == AccessType::pl) {
+            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+          } else {
+            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+            packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
+          }
+
+          numResponseSentThisCycle++;
         }
+      }
 
-        numResponseSentThisCycle++;
+      if (numResponseSentThisCycle > 0) {
+        dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u PIM-local responses from PIM[%u]\n", 
+            currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::pl)], stackIdx);
+        dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u inter-PIM responses from PIM[%u]\n", 
+            currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::ip)], stackIdx);
+        //dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  responses from PIM[%u]\n", 
+        //currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::hp)], stackIdx);
+      }
+
+      stackIdx = (stackIdx == numStack-1) ? 0 : stackIdx+1;
+    }
+
+    for (unsigned counter = 0; counter < numStack; counter++) {
+      unsigned numRequestSentThisCycle = 0;
+      for (auto& request : requestQueues[stackIdx]) {
+        uint64_t readyCycle = request.second;
+        if (readyCycle < currentCycle) { 
+          SST::Event* ev = request.first;
+          
+          // This is for bandwidth control
+          MemEvent *me = static_cast<MemEvent*>(ev);
+          LinkId_t srcLinkId = me->getDeliveryLink()->getId();
+          LinkId_t dstLinkId = lookupNode(me->getAddr());
+          AccessType accessType = isLocalAccess(srcLinkId, dstLinkId) ?
+            AccessType::pl : AccessType::ip;
+
+          // if saturated, don't send any more request to the corresponding
+          // accessType
+          if (maxPacketPerCycle[accessType] <=
+              packetCounters[stackIdx][static_cast<unsigned>(accessType)])
+            continue;
+
+          sendRequest(ev);
+          requestQueues[stackIdx].erase(requestQueues[stackIdx].find(ev));
+
+          unsigned srcStackIdx = getStackIdx(srcLinkId);
+          unsigned dstStackIdx = getStackIdx(dstLinkId);
+          if (accessType == AccessType::pl) {
+            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+          } else {
+            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+            packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
+          }
+
+          numRequestSentThisCycle++;
+        }
+      }
+
+      if (numRequestSentThisCycle > 0) {
+        dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u PIM-local requests/responses to/from PIM[%u]\n", 
+            currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::pl)], stackIdx);
+        dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u inter-PIM requests/responses to/from PIM[%u]\n", 
+            currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::ip)], stackIdx);
+        //dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  requests/responses to/from PIM[%u]\n", 
+        //currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::hp)], stackIdx);
+      }
+
+      stackIdx = (stackIdx == numStack-1) ? 0 : stackIdx+1;
+    }
+
+    for (unsigned stackIdx = 0; stackIdx < numStack; stackIdx++) {
+      for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
+        bandwidthUtilizationHistogram[stackIdx][accessTypeIdx][packetCounters[stackIdx][accessTypeIdx]] += 1;
+      }
+    }
+  }
+  // 1-to-N or N-to-1 Mode
+  else {
+    for (unsigned si = 0; si < numStack; si++) {
+      unsigned numResponseSentThisCycle = 0;
+      for (auto& response : responseQueues[stackIdx]) {
+        uint64_t readyCycle = response.second;
+        if (readyCycle < currentCycle) { 
+          SST::Event* ev = response.first;
+
+          AccessType accessType = AccessType::hp;
+          // if saturated, don't send any more response
+          if (maxPacketPerCycle[accessType] <=
+              packetCounters[si][static_cast<unsigned>(accessType)])
+            continue;
+
+          sendResponse(ev);
+          responseQueues[si].erase(responseQueues[si].find(ev));
+          packetCounters[si][static_cast<unsigned>(accessType)] += 1;
+          numResponseSentThisCycle++;
+        }
+      }
+
+      if (numResponseSentThisCycle > 0) {
+        dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM responses from PIM[%u]\n", 
+          currentCycle, packetCounters[si][static_cast<int>(AccessType::hp)], si);
       }
     }
 
-    if (numResponseSentThisCycle > 0) {
-      m_dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u PIM-local responses from PIM[%u]\n", 
-          m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::pl)], stackIdx);
-      m_dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u inter-PIM responses from PIM[%u]\n", 
-          m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::ip)], stackIdx);
-      //m_dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  responses from PIM[%u]\n", 
-      //m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::hp)], stackIdx);
-    }
+    for (unsigned si = 0; si < numStack; si++) {
+      unsigned numRequestSentThisCycle = 0;
+      for (auto& request : requestQueues[si]) {
+        uint64_t readyCycle = request.second;
+        if (readyCycle < currentCycle) { 
+          SST::Event* ev = request.first;
 
-    stackIdx = (stackIdx == m_numStack-1) ? 0 : stackIdx+1;
-  }
+          AccessType accessType = AccessType::hp;
+          // if saturated, don't send any more request
+          if (maxPacketPerCycle[accessType] <=
+              packetCounters[si][static_cast<unsigned>(accessType)])
+            continue;
 
-  for (unsigned counter = 0; counter < m_numStack; counter++) {
-    unsigned numRequestSentThisCycle = 0;
-    for (auto& request : m_requestQueues[stackIdx] ) {
-      uint64_t readyCycle = request.second;
-      if (readyCycle < m_currentCycle) { 
-        SST::Event* ev = request.first;
-        
-        // This is for bandwidth control
-        MemEvent *me = static_cast<MemEvent*>(ev);
-        LinkId_t srcLinkId = me->getDeliveryLink()->getId();
-        LinkId_t dstLinkId = lookupNode(me->getAddr());
-        access_type accessType = isLocalAccess(srcLinkId, dstLinkId) ?
-          access_type::pl : access_type::ip;
-
-        // if saturated, don't send any more response to the corresponding
-        // accessType
-        if (m_maxPacketPerCycle[accessType] <=
-            m_packetCounters[stackIdx][static_cast<unsigned>(accessType)])
-          continue;
-
-        sendRequest(ev);
-        m_requestQueues[stackIdx].erase(m_requestQueues[stackIdx].find(ev));
-
-        unsigned srcStackIdx = getStackIdx(srcLinkId);
-        unsigned dstStackIdx = getStackIdx(dstLinkId);
-        if (accessType == access_type::pl) {
-          m_packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-        } else {
-          m_packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-          m_packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
+          sendRequest(ev);
+          requestQueues[si].erase(requestQueues[si].find(ev));
+          packetCounters[si][static_cast<unsigned>(accessType)] += 1;
+          numRequestSentThisCycle++;
         }
-
-        numRequestSentThisCycle++;
       }
-    }
 
-    if (numRequestSentThisCycle > 0) {
-      m_dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u PIM-local requests/responses to/from PIM[%u]\n", 
-          m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::pl)], stackIdx);
-      m_dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %2u inter-PIM requests/responses to/from PIM[%u]\n", 
-          m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::ip)], stackIdx);
-      //m_dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  requests/responses to/from PIM[%u]\n", 
-      //m_currentCycle, m_packetCounters[stackIdx][static_cast<int>(access_type::hp)], stackIdx);
-    }
-
-    stackIdx = (stackIdx == m_numStack-1) ? 0 : stackIdx+1;
-  }
-
-  for (unsigned stackIdx = 0; stackIdx < m_numStack; stackIdx++) {
-    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(access_type::max); accessTypeIdx++) {
-      m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx][m_packetCounters[stackIdx][accessTypeIdx]] += 1;
+      if (numRequestSentThisCycle > 0) {
+        dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  requests/responses to/from PIM[%u]\n", 
+          currentCycle, packetCounters[si][static_cast<int>(AccessType::hp)], si);
+      }
     }
   }
 
@@ -175,24 +235,42 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
 { 
   MemEvent *me = static_cast<MemEvent*>(ev);
 
-  LinkId_t srcLinkId = me->getDeliveryLink()->getId();
-  LinkId_t dstLinkId = lookupNode(me->getAddr());
+  // PIM Mode
+  if (likely(numCore > 1 && numStack > 1 && numCore == numStack)) {
+    LinkId_t srcLinkId = me->getDeliveryLink()->getId();
+    LinkId_t dstLinkId = lookupNode(me->getAddr());
 
-  bool localAccess = isLocalAccess(srcLinkId, dstLinkId);
-  unsigned latency = localAccess ? m_localLatency : m_remoteLatency;
-  uint64_t readyCycle = m_currentCycle + latency;
+    bool localAccess = isLocalAccess(srcLinkId, dstLinkId);
+    unsigned latency = localAccess ? localLatency : remoteLatency;
+    uint64_t readyCycle = currentCycle + latency;
 
-  unsigned srcStackIdx = getStackIdx(srcLinkId);
-  unsigned dstStackIdx = getStackIdx(dstLinkId);
-  m_requestQueues[srcStackIdx][ev] = readyCycle; 
+    unsigned srcStackIdx = getStackIdx(srcLinkId);
+    unsigned dstStackIdx = getStackIdx(dstLinkId);
+    requestQueues[srcStackIdx][ev] = readyCycle; 
 
-  // statistics
-  m_perStackRequests[srcStackIdx][dstStackIdx]++;
-  m_latencyMaps[srcStackIdx][me->getAddr()] = m_currentCycle;
+    // statistics
+    perStackRequests[srcStackIdx][dstStackIdx]++;
+    perStackLatencyMaps[srcStackIdx][me->getAddr()] = currentCycle;
 
-  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    m_dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " src:%s dst:%u currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
-      CommandString[me->getCmd()], me->getAddr(), me->getSrc().c_str(), dstStackIdx, m_currentCycle, readyCycle);
+    if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
+      dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " src:%s dst:%u "
+        "currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
+        CommandString[me->getCmd()], me->getAddr(), me->getSrc().c_str(),
+        dstStackIdx, currentCycle, readyCycle);
+    }
+  }
+  // 1-to-N or N-to-1 Mode
+  else {
+    LinkId_t dstLinkId = lookupNode(me->getAddr());
+    unsigned dstStackIdx = getStackIdx(dstLinkId);
+
+    // use <latency> for 1-to-N and N-to-1 configuration
+    uint64_t readyCycle = currentCycle + latency;
+    requestQueues[dstStackIdx][ev] = readyCycle;
+
+    // statistics
+    requests[dstStackIdx]++;
+    latencyMap[dstStackIdx][me->getAddr()] = currentCycle;
   }
 }
 
@@ -200,36 +278,58 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
 { 
   MemEvent *me = static_cast<MemEvent*>(ev);
 
-  LinkId_t srcLinkId = me->getDeliveryLink()->getId();
-  LinkId_t dstLinkId = lookupNode(me->getDst());
+  // PIM Mode
+  if (likely(numCore > 1 && numStack > 1 && numCore == numStack)) {
+    LinkId_t srcLinkId = me->getDeliveryLink()->getId();
+    LinkId_t dstLinkId = lookupNode(me->getDst());
 
-  bool localAccess = isLocalAccess(srcLinkId, dstLinkId);
-  unsigned latency = localAccess ? m_localLatency : m_remoteLatency;
-  uint64_t readyCycle = m_currentCycle + latency;
+    bool localAccess = isLocalAccess(srcLinkId, dstLinkId);
+    unsigned latency = localAccess ? localLatency : remoteLatency;
+    uint64_t readyCycle = currentCycle + latency;
 
-  unsigned srcStackIdx = getStackIdx(srcLinkId);
-  unsigned dstStackIdx = getStackIdx(dstLinkId);
-  m_responseQueues[srcStackIdx][ev] = readyCycle; 
+    unsigned srcStackIdx = getStackIdx(srcLinkId);
+    unsigned dstStackIdx = getStackIdx(dstLinkId);
+    responseQueues[srcStackIdx][ev] = readyCycle; 
 
-  // statistics
-  uint64_t localAddress = me->getAddr();
-  uint64_t flatAddress = convertToFlatAddress(localAddress, m_memoryMap[srcLinkId]->getRangeStart());
+    // statistics
+    uint64_t localAddress = me->getAddr();
+    uint64_t flatAddress = convertToFlatAddress(localAddress, getMemoryCompInfo(srcLinkId)->getRangeStart());
 
-  uint64_t roundTripTime = 0;
-  if (localAccess) {
-    roundTripTime = m_currentCycle + latency - m_latencyMaps[dstStackIdx][flatAddress];
-    m_localRequestLatencies[dstStackIdx] += roundTripTime;
-  } else {
-    roundTripTime = m_currentCycle + latency - m_latencyMaps[dstStackIdx][flatAddress];
-    m_remoteRequestLatencies[dstStackIdx] += roundTripTime;
+    uint64_t roundTripTime = 0;
+    if (localAccess) {
+      roundTripTime = currentCycle + latency - perStackLatencyMaps[dstStackIdx][flatAddress];
+      localRequestLatencies[dstStackIdx] += roundTripTime;
+    } else {
+      roundTripTime = currentCycle + latency - perStackLatencyMaps[dstStackIdx][flatAddress];
+      remoteRequestLatencies[dstStackIdx] += roundTripTime;
+    }
+
+    perStackLatencyMaps[dstStackIdx].erase(flatAddress);
+    perStackResponses[srcStackIdx][dstStackIdx]++;
+
+    if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
+      dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " src:%s dst:%s currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
+        CommandString[me->getCmd()], flatAddress, me->getSrc().c_str(), me->getDst().c_str(), currentCycle, readyCycle);
+    }
   }
+  // 1-to-N or N-to-1 Mode
+  else {
+    LinkId_t srcLinkId = me->getDeliveryLink()->getId();
+    unsigned srcStackIdx = getStackIdx(srcLinkId);
 
-  m_latencyMaps[dstStackIdx].erase(flatAddress);
-  m_perStackResponses[srcStackIdx][dstStackIdx]++;
+    // use <latency> for 1-to-N and N-to-1 configuration
+    uint64_t readyCycle = currentCycle + latency;
+    responseQueues[srcStackIdx][ev] = readyCycle;
 
-  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    m_dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " src:%s dst:%s currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
-      CommandString[me->getCmd()], flatAddress, me->getSrc().c_str(), me->getDst().c_str(), m_currentCycle, readyCycle);
+    // statistics
+    responses[srcStackIdx]++;
+
+    uint64_t localAddress = me->getAddr();
+    uint64_t flatAddress = convertToFlatAddress(localAddress, getMemoryCompInfo(srcLinkId)->getRangeStart());
+    uint64_t roundTripTime = currentCycle + latency - latencyMap[srcStackIdx][flatAddress];
+    latencies += roundTripTime;
+
+    latencyMap[srcStackIdx].erase(flatAddress);
   }
 }
 
@@ -238,17 +338,17 @@ void MyNetwork::sendRequest(SST::Event* ev)
   MemEvent *me = static_cast<MemEvent*>(ev);
 
   LinkId_t dstLinkId = lookupNode(me->getAddr());
-  SST::Link* dstLink = m_linkIdMap[dstLinkId];
+  SST::Link* dstLink = getLink(dstLinkId);
 
   MemEvent* forwardEvent = new MemEvent(*me);
-  forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), m_memoryMap[dstLinkId]->getRangeStart()));
-  forwardEvent->setBaseAddr(convertToLocalAddress(me->getAddr(), m_memoryMap[dstLinkId]->getRangeStart()));
+  forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), getMemoryCompInfo(dstLinkId)->getRangeStart()));
+  forwardEvent->setBaseAddr(convertToLocalAddress(me->getAddr(), getMemoryCompInfo(dstLinkId)->getRangeStart()));
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
     unsigned srcStackIdx = getStackIdx(me->getDeliveryLink()->getId());
     unsigned dstStackIdx = getStackIdx(lookupNode(me->getAddr()));
-    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
-        CommandString[me->getCmd()], me->getAddr(), m_currentCycle, srcStackIdx, dstStackIdx);
+    dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
+        CommandString[me->getCmd()], me->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
   }
 
   dstLink->send(forwardEvent);
@@ -261,17 +361,17 @@ void MyNetwork::sendResponse(SST::Event* ev)
 
   LinkId_t srcLinkId = me->getDeliveryLink()->getId();
   LinkId_t dstLinkId = lookupNode(me->getDst());
-  SST::Link* dstLink = m_linkIdMap[dstLinkId];
+  SST::Link* dstLink = getLink(dstLinkId);
 
   MemEvent* forwardEvent = new MemEvent(*me);
-  forwardEvent->setAddr(convertToFlatAddress(me->getAddr(), m_memoryMap[srcLinkId]->getRangeStart()));
-  forwardEvent->setBaseAddr(convertToFlatAddress(me->getAddr(), m_memoryMap[srcLinkId]->getRangeStart()));
+  forwardEvent->setAddr(convertToFlatAddress(me->getAddr(), getMemoryCompInfo(srcLinkId)->getRangeStart()));
+  forwardEvent->setBaseAddr(convertToFlatAddress(me->getAddr(), getMemoryCompInfo(srcLinkId)->getRangeStart()));
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
     unsigned srcStackIdx = getStackIdx(me->getDeliveryLink()->getId());
     unsigned dstStackIdx = getStackIdx(lookupNode(me->getDst()));
-    m_dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
-        CommandString[me->getCmd()], me->getAddr(), m_currentCycle, srcStackIdx, dstStackIdx);
+    dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
+        CommandString[me->getCmd()], me->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
   }
 
   dstLink->send(forwardEvent);
@@ -280,25 +380,25 @@ void MyNetwork::sendResponse(SST::Event* ev)
 
 void MyNetwork::mapNodeEntry(const string& name, LinkId_t id)
 {
-  auto it = m_nameMap.find(name);
-  if (m_nameMap.end() != it) {
-    m_dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork attempting to map node that has already been mapped\n", 
+  auto it = nameToLinkIdMap.find(name);
+  if (nameToLinkIdMap.end() != it) {
+    dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork attempting to map node that has already been mapped\n", 
         getName().c_str());
   }
-  m_nameMap[name] = id;
+  nameToLinkIdMap[name] = id;
 }
 
 LinkId_t MyNetwork::lookupNode(const uint64_t addr) 
 {
   LinkId_t dstLinkId = -1;
-  for (auto it : m_memoryMap) {
+  for (auto it : linkToMemoryCompInfoMap) {
     if (it.second->contains(addr)) {
       dstLinkId = it.first;
     }
   }
 
   if (dstLinkId == -1) {
-    m_dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup for address 0x%" PRIx64 "failed\n", 
+    dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup for address 0x%" PRIx64 "failed\n", 
         getName().c_str(), addr);
   }
   return dstLinkId;
@@ -306,9 +406,9 @@ LinkId_t MyNetwork::lookupNode(const uint64_t addr)
 
 LinkId_t MyNetwork::lookupNode(const string& name)
 {
-	auto it = m_nameMap.find(name);
-  if (it == m_nameMap.end()) {
-      m_dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup of node %s returned no mapping\n", 
+	auto it = nameToLinkIdMap.find(name);
+  if (it == nameToLinkIdMap.end()) {
+      dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup of node %s returned no mapping\n", 
           getName().c_str(), name.c_str());
   }
   return it->second;
@@ -318,20 +418,20 @@ uint64_t MyNetwork::convertToLocalAddress(uint64_t requestedAddress, uint64_t ra
 {
   uint64_t localAddress = 0;
 
-  if (m_interleaveSize == 0) {
+  if (interleaveSize == 0) {
     localAddress = requestedAddress - rangeStart;
   } else {
-    uint64_t interleaveStep = m_interleaveSize * m_numStack;
+    uint64_t interleaveStep = interleaveSize * numStack;
 
     Addr addr = requestedAddress - rangeStart;
     Addr step = addr / interleaveStep;
     Addr offset = addr % interleaveStep;
 
-    localAddress = (step * m_interleaveSize) + offset;
+    localAddress = (step * interleaveSize) + offset;
   }
 
   if (DEBUG_ALL || requestedAddress == DEBUG_ADDR) {
-    m_dbg.debug(_L10_, "Converted requested address 0x%" PRIx64 " to local address 0x%" PRIx64 "\n", 
+    dbg.debug(_L10_, "Converted requested address 0x%" PRIx64 " to local address 0x%" PRIx64 "\n", 
         requestedAddress, localAddress);
   }
 
@@ -342,21 +442,21 @@ uint64_t MyNetwork::convertToFlatAddress(uint64_t localAddress, uint64_t rangeSt
 {
   uint64_t flatAddress = 0;
 
-  if (m_interleaveSize == 0) {
+  if (interleaveSize == 0) {
     flatAddress = localAddress + rangeStart;
   } else {
-    uint64_t interleaveStep = m_interleaveSize * m_numStack;
+    uint64_t interleaveStep = interleaveSize * numStack;
 
     Addr addr = localAddress;
-    Addr step = addr / m_interleaveSize; 
-    Addr offset = addr % m_interleaveSize;
+    Addr step = addr / interleaveSize; 
+    Addr offset = addr % interleaveSize;
 
     flatAddress = (step * interleaveStep) + offset;
     flatAddress = flatAddress + rangeStart;
   }
 
   if (DEBUG_ALL || flatAddress == DEBUG_ADDR) {
-    m_dbg.debug(_L10_, "Converted local address 0x%" PRIx64 " to flat address 0x%" PRIx64 "\n", 
+    dbg.debug(_L10_, "Converted local address 0x%" PRIx64 " to flat address 0x%" PRIx64 "\n", 
         localAddress, flatAddress);
   }
 
@@ -370,9 +470,9 @@ void MyNetwork::configureParameters(SST::Params& params)
     (Output::output_location_t)params.find_integer("debug", 0);
 
   string name = "[" + this->getName() + "] ";
-  m_dbg.init(name.c_str(), debugLevel, 0, outputLocation);
+  dbg.init(name.c_str(), debugLevel, 0, outputLocation);
   if (debugLevel < 0 || debugLevel > 10) {
-    m_dbg.fatal(CALL_INFO, -1, "Debugging level must be betwee 0 and 10. \n");
+    dbg.fatal(CALL_INFO, -1, "Debugging level must be betwee 0 and 10. \n");
   }
 
   int debugAddr = params.find_integer("debug_addr", -1);
@@ -384,7 +484,7 @@ void MyNetwork::configureParameters(SST::Params& params)
     DEBUG_ALL = false;
   }
 
-  m_packetSize = params.find_integer("packet_size", 64);
+  packetSize = params.find_integer("packet_size", 64);
 
   unsigned PIMLocalBandwidth = params.find_integer("pim_local_bandwidth", 1024);
   unsigned hostPIMBandwidth = params.find_integer("host_pim_bandwidth", 512);
@@ -394,50 +494,65 @@ void MyNetwork::configureParameters(SST::Params& params)
   float frequencyInGHz = (float)(UnitAlgebra(frequency).getRoundedValue()) /
     (float)(UnitAlgebra("1GHz").getRoundedValue());
 
-  m_maxPacketPerCycle[access_type::pl] = (unsigned)((float)PIMLocalBandwidth / frequencyInGHz / m_packetSize);
-  m_maxPacketPerCycle[access_type::ip] = (unsigned)((float)interPIMBandwidth / frequencyInGHz / m_packetSize);
-  m_maxPacketPerCycle[access_type::hp] = (unsigned)((float)hostPIMBandwidth / frequencyInGHz / m_packetSize);
+  maxPacketPerCycle[AccessType::pl] = (unsigned)((float)PIMLocalBandwidth / frequencyInGHz / packetSize);
+  maxPacketPerCycle[AccessType::ip] = (unsigned)((float)interPIMBandwidth / frequencyInGHz / packetSize);
+  maxPacketPerCycle[AccessType::hp] = (unsigned)((float)hostPIMBandwidth / frequencyInGHz / packetSize);
 
-  m_dbg.debug(_L7_,"Max packets per cycle for PIM-local communication: %u\n", m_maxPacketPerCycle[access_type::pl]);
-  m_dbg.debug(_L7_,"Max packets per cycle for inter-PIM communication: %u\n", m_maxPacketPerCycle[access_type::ip]);
-  m_dbg.debug(_L7_,"Max packets per cycle for Host-PIM communication: %u\n", m_maxPacketPerCycle[access_type::hp]);
+  dbg.debug(_L7_,"Max packets per cycle for PIM-local communication: %u\n", maxPacketPerCycle[AccessType::pl]);
+  dbg.debug(_L7_,"Max packets per cycle for inter-PIM communication: %u\n", maxPacketPerCycle[AccessType::ip]);
+  dbg.debug(_L7_,"Max packets per cycle for Host-PIM communication: %u\n", maxPacketPerCycle[AccessType::hp]);
 
-  m_localLatency = params.find_integer("local_latency", 1);
-  m_remoteLatency = params.find_integer("remote_latency", 1);
+  latency = params.find_integer("latency", 1);
+  localLatency = params.find_integer("local_latency", 1);
+  remoteLatency = params.find_integer("remote_latency", 1);
 
   Clock::Handler<MyNetwork>* clockHandler = new Clock::Handler<MyNetwork>(this, &MyNetwork::clockTick);
   registerClock(frequency, clockHandler);
 
-  m_numStack = params.find_integer("num_stack", 1);
+  numCore = params.find_integer("num_core", 1);
+  numStack = params.find_integer("num_stack", 1);
+
+  // should be 1-to-N, N-to-1 or N-to-N
+  if (numCore == numStack) 
+    dbg.debug(_L3_,"PIM Mode\n");
+  else if (numCore == 1 || numStack == 1) {
+    if (numCore == 1) 
+      dbg.debug(_L3_,"HOST Mode\n"); 
+    if (numStack == 1) 
+      dbg.debug(_L3_,"Single Stack Mode\n");
+  }
+  else assert(0);
+
   uint64_t stackSize = params.find_integer("stack_size", 0); // in MB
-  m_stackSize = stackSize * (1024*1024ul); // Convert into MBs
-  m_interleaveSize = (uint64_t) params.find_integer("interleave_size", 4096);
+  stackSize = stackSize * (1024*1024ul); // Convert into MBs
+  interleaveSize = (uint64_t) params.find_integer("interleave_size", 4096);
 }
 
-void MyNetwork::configureLinks() 
+void MyNetwork::configureLinks(SST::Params& params) 
 {
   SST::Link* link;
-	for (unsigned i = 0; i < m_numStack; i++) {
+
+	for (unsigned i = 0; i < numCore; i++) {
 		ostringstream linkName;
 		linkName << "high_network_" << i;
 		string ln = linkName.str();
     link = configureLink(ln, "1 ps", new Event::Handler<MyNetwork>(this, &MyNetwork::processIncomingRequest));
 		if (link) {
-      m_highNetPorts.push_back(link);
-      m_linkIdMap[m_highNetPorts[i]->getId()] = m_highNetPorts[i];
-      m_dbg.output(CALL_INFO, "Port %lu = Link %d\n", m_highNetPorts[i]->getId(), i);
+      highNetPorts.push_back(link);
+      linkIdToLinkMap[highNetPorts[i]->getId()] = highNetPorts[i];
+      dbg.output(CALL_INFO, "Port %lu = Link %d\n", highNetPorts[i]->getId(), i);
     }
   }
   
-  for (unsigned i = 0; i < m_numStack; i++) {
+  for (unsigned i = 0; i < numStack; i++) {
 		ostringstream linkName;
 		linkName << "low_network_" << i;
 		string ln = linkName.str();
     link = configureLink(ln, "1 ps", new Event::Handler<MyNetwork>(this, &MyNetwork::processIncomingResponse));
     if (link) {
-      m_lowNetPorts.push_back(link);
-      m_linkIdMap[m_lowNetPorts[i]->getId()] = m_lowNetPorts[i];
-      m_dbg.output(CALL_INFO, "Port %lu = Link %d\n", m_lowNetPorts[i]->getId(), i);
+      lowNetPorts.push_back(link);
+      linkIdToLinkMap[lowNetPorts[i]->getId()] = lowNetPorts[i];
+      dbg.output(CALL_INFO, "Port %lu = Link %d\n", lowNetPorts[i]->getId(), i);
     }
 	}
 }
@@ -445,11 +560,11 @@ void MyNetwork::configureLinks()
 void MyNetwork::init(unsigned int phase)
 {
   SST::Event *ev;
-  for (unsigned i = 0; i < m_numStack; i++) {
-    while ((ev = m_highNetPorts[i]->recvInitData())) {
+  for (unsigned i = 0; i < numCore; i++) {
+    while ((ev = highNetPorts[i]->recvInitData())) {
       MemEvent* memEvent = dynamic_cast<MemEvent*>(ev);
       if (memEvent && memEvent->getCmd() == NULLCMD) {
-        mapNodeEntry(memEvent->getSrc(), m_highNetPorts[i]->getId());
+        mapNodeEntry(memEvent->getSrc(), highNetPorts[i]->getId());
       }
       delete memEvent;
     }
@@ -461,13 +576,13 @@ void MyNetwork::init(unsigned int phase)
 void MyNetwork::finish()
 {
   // sanity check for histogram
-  for (unsigned stackIdx = 0; stackIdx < m_numStack; stackIdx++) {
-    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(access_type::max); accessTypeIdx++) {
+  for (unsigned stackIdx = 0; stackIdx < numStack; stackIdx++) {
+    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
       uint64_t totalCycle = 0;
-      for (auto& histogramIterator : m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx]) {
+      for (auto& histogramIterator : bandwidthUtilizationHistogram[stackIdx][accessTypeIdx]) {
         totalCycle += histogramIterator.second;
       }
-      assert(totalCycle == m_currentCycle);
+      assert(totalCycle == currentCycle);
     }
   }
 
@@ -476,19 +591,19 @@ void MyNetwork::finish()
 
 void MyNetwork::initializePacketCounter()
 {
-  // enum class access_type { pl = 0, ip, hp, max };
-  for (unsigned stackIdx = 0; stackIdx < m_numStack; ++stackIdx) {
-    m_packetCounters.push_back(vector<unsigned>());
-    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(access_type::max); accessTypeIdx++) {
-      m_packetCounters[stackIdx].push_back(0);
+  // enum class AccessType { pl = 0, ip, hp, max };
+  for (unsigned stackIdx = 0; stackIdx < numStack; ++stackIdx) {
+    packetCounters.push_back(vector<unsigned>());
+    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
+      packetCounters[stackIdx].push_back(0);
     }
   }
 }
 
 void MyNetwork::resetPacketCounter() 
 {
-  for (auto& packetCounterIterator : m_packetCounters) {
-    for (auto& packetCounter : packetCounterIterator) {
+  for (auto& stackPacketCounters : packetCounters) {
+    for (auto& packetCounter : stackPacketCounters) {
       packetCounter = 0;
     }
   }
@@ -496,30 +611,43 @@ void MyNetwork::resetPacketCounter()
 
 void MyNetwork::initStats()
 {
-  for (int stackIdx = 0; stackIdx < m_numStack; ++stackIdx) {
-    m_localRequestLatencies.push_back(0);
-    m_remoteRequestLatencies.push_back(0);
+  // PIM Mode
+  if (likely(numCore > 1 && numStack > 1 && numCore == numStack)) {
+    for (unsigned si = 0; si < numStack; si++) {
+      localRequestLatencies.push_back(0);
+      remoteRequestLatencies.push_back(0);
 
-    // initialization of stat-related variables goes here
-    m_latencyMaps.push_back(map<uint64_t, uint64_t>());
-    m_perStackResponses.push_back(vector<uint64_t>());
-    m_perStackRequests.push_back(vector<uint64_t>());
-    for (int j = 0; j < m_numStack; ++j) {
-      m_perStackResponses[stackIdx].push_back(0);
-      m_perStackRequests[stackIdx].push_back(0);
+      perStackLatencyMaps.push_back(map<uint64_t, uint64_t>());
+      perStackResponses.push_back(vector<uint64_t>());
+      perStackRequests.push_back(vector<uint64_t>());
+      for (int j = 0; j < numStack; ++j) {
+        perStackResponses[si].push_back(0);
+        perStackRequests[si].push_back(0);
+      }
+
+      bandwidthUtilizationHistogram.push_back(vector<map<unsigned, uint64_t>>());
+      for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
+        bandwidthUtilizationHistogram[si].push_back(map<unsigned, uint64_t>());
+      }
     }
-
-    m_bandwidthUtilizationHistogram.push_back(vector<map<unsigned, uint64_t>>());
-    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(access_type::max); accessTypeIdx++) {
-      m_bandwidthUtilizationHistogram[stackIdx].push_back(map<unsigned, uint64_t>());
+  }
+  // 1-to-N or N-to-1 Mode
+  else {
+    latencies = 0;
+    for (unsigned si = 0; si < numStack; si++) {
+      // initialization of stat-related variables goes here
+      requests.push_back(0);
+      responses.push_back(0);
     }
   }
 }
 
 void MyNetwork::printStats()
 {
+  string componentName = this->Component::getName();
+
   stringstream ss;
-  ss << m_name.c_str() << ".stat.out";
+  ss << componentName.c_str() << ".stat.out";
   string filename = ss.str();
 
   ofstream ofs;
@@ -527,64 +655,64 @@ void MyNetwork::printStats()
       std::ofstream::badbit);
   ofs.open(filename.c_str(), std::ios_base::out);
 
-  stringstream stat_name;
+  stringstream statisticName;
   uint64_t count;
-  for (unsigned stackIdx = 0; stackIdx < m_numStack; ++stackIdx) {
+  for (unsigned stackIdx = 0; stackIdx < numStack; ++stackIdx) {
     uint64_t totalRequests = 0;
-    for_each(m_perStackRequests[stackIdx].begin(), m_perStackRequests[stackIdx].end(), 
+    for_each(perStackRequests[stackIdx].begin(), perStackRequests[stackIdx].end(), 
         [&totalRequests] (uint64_t req) { totalRequests += req; });
 
-    m_dbg.debug(_L7_, "PIM[%u] total requests: %" PRIu64 "\n", stackIdx, totalRequests);
+    dbg.debug(_L7_, "PIM[%u] total requests: %" PRIu64 "\n", stackIdx, totalRequests);
 
-    stat_name.str(string()); stat_name << "local_request_pim_" << stackIdx;
-    uint64_t localRequests = m_perStackRequests[stackIdx][stackIdx];
-    writeTo(ofs, m_name, stat_name.str(), localRequests, localRequests);
+    statisticName.str(string()); statisticName << "local_request_pim_" << stackIdx;
+    uint64_t localRequests = perStackRequests[stackIdx][stackIdx];
+    writeTo(ofs, componentName, statisticName.str(), localRequests, localRequests);
 
-    m_dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, localRequests);
+    dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, localRequests);
 
-    stat_name.str(string()); stat_name << "remote_request_pim_" << stackIdx;
+    statisticName.str(string()); statisticName << "remote_request_pim_" << stackIdx;
     uint64_t remoteRequests = totalRequests - localRequests;
-    writeTo(ofs, m_name, stat_name.str(), remoteRequests, remoteRequests);
+    writeTo(ofs, componentName, statisticName.str(), remoteRequests, remoteRequests);
 
-    m_dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, remoteRequests);
+    dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, remoteRequests);
 
-    for (unsigned j = 0; j < m_numStack; ++j) {
-      stat_name.str(string()); stat_name << "requests_from_pim_" << stackIdx << "_to_pim_" << j;
-      count = m_perStackRequests[stackIdx][j];
-      writeTo(ofs, m_name, stat_name.str(), count, count);
+    for (unsigned j = 0; j < numStack; ++j) {
+      statisticName.str(string()); statisticName << "requests_from_pim_" << stackIdx << "_to_pim_" << j;
+      count = perStackRequests[stackIdx][j];
+      writeTo(ofs, componentName, statisticName.str(), count, count);
 
-      m_dbg.debug(_L7_, "requests from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
+      dbg.debug(_L7_, "requests from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
     }
 
-    for (unsigned j = 0; j < m_numStack; ++j) {
-      stat_name.str(string()); stat_name << "responses_from_pim_" << stackIdx << "_to_pim_" << j;
-      count = m_perStackResponses[stackIdx][j];
-      writeTo(ofs, m_name, stat_name.str(), count, count);
+    for (unsigned j = 0; j < numStack; ++j) {
+      statisticName.str(string()); statisticName << "responses_from_pim_" << stackIdx << "_to_pim_" << j;
+      count = perStackResponses[stackIdx][j];
+      writeTo(ofs, componentName, statisticName.str(), count, count);
 
-      m_dbg.debug(_L7_, "responses from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
+      dbg.debug(_L7_, "responses from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
     }
 
-    stat_name.str(string()); stat_name << "local_request_avg_latency_pim_" << stackIdx;
-    count = (localRequests > 0) ? m_localRequestLatencies[stackIdx] / localRequests : 0;
-    writeTo(ofs, m_name, stat_name.str(), count, count);
+    statisticName.str(string()); statisticName << "local_request_avg_latency_pim_" << stackIdx;
+    count = (localRequests > 0) ? localRequestLatencies[stackIdx] / localRequests : 0;
+    writeTo(ofs, componentName, statisticName.str(), count, count);
 
-    m_dbg.debug(_L7_, "PIM[%u] local requests average latency: %" PRIu64 "\n", stackIdx, count);
+    dbg.debug(_L7_, "PIM[%u] local requests average latency: %" PRIu64 "\n", stackIdx, count);
 
-    stat_name.str(string()); stat_name << "remote_request_avg_latency_pim_" << stackIdx;
-    count = (remoteRequests > 0) ? m_remoteRequestLatencies[stackIdx] / remoteRequests : 0;
-    writeTo(ofs, m_name, stat_name.str(), count, count);
+    statisticName.str(string()); statisticName << "remote_request_avg_latency_pim_" << stackIdx;
+    count = (remoteRequests > 0) ? remoteRequestLatencies[stackIdx] / remoteRequests : 0;
+    writeTo(ofs, componentName, statisticName.str(), count, count);
 
-    m_dbg.debug(_L7_, "PIM[%u] remote requests average latency: %" PRIu64 "\n", stackIdx, count);
+    dbg.debug(_L7_, "PIM[%u] remote requests average latency: %" PRIu64 "\n", stackIdx, count);
 
     uint64_t cycle = 0;
     float percent = 0.0f;
-    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(access_type::max); accessTypeIdx++) {
-      for (auto& histogramIterator : m_bandwidthUtilizationHistogram[stackIdx][accessTypeIdx]) {
-        stat_name.str(string()); 
-        stat_name << access_type_name[accessTypeIdx] << "_PIM_" << stackIdx << "_" << histogramIterator.first;
+    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
+      for (auto& histogramIterator : bandwidthUtilizationHistogram[stackIdx][accessTypeIdx]) {
+        statisticName.str(string()); 
+        statisticName << AccessTypeName[accessTypeIdx] << "_PIM_" << stackIdx << "_" << histogramIterator.first;
         cycle = histogramIterator.second;
-        percent = 100*((float)cycle)/m_currentCycle;
-        writeTo(ofs, m_name, stat_name.str(), cycle, percent);
+        percent = 100*((float)cycle)/currentCycle;
+        writeTo(ofs, componentName, statisticName.str(), cycle, percent);
       }
     }
 

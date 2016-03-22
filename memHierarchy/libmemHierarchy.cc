@@ -400,8 +400,10 @@ static Component* create_MyNetwork(ComponentId_t id, Params& params)
 
 static const ElementInfoParam myNetwork_params[] = {
     {"frequency",           "Clock frequency in GHz unit", "1GHz"},
+    {"latency",             "Latency for host access in cycles", "0"},
     {"local_latency",       "Latency for local access in cycles", "0"},
     {"remote_latency",      "Latency for remote access in cycles", "0"},
+    {"num_core",            "Number of compute cores: 1 indicates host mode", "1"},
     {"num_stack",           "Number of memory stacks", "1"},
     {"interleave_size",     "Interleaving granularity in bytes", "4096"},
     {"stack_size",          "Size of memory stack in MB", "512"},
@@ -417,7 +419,8 @@ static const ElementInfoParam myNetwork_params[] = {
 
 
 static const ElementInfoPort myNetwork_ports[] = {
-    {"low_network_%(low_network_ports)d",  "Ports connected to lower level caches (closer to main memory)", memEvent_port_events},
+    {"host_link",                           "Port connected to the host node", memEvent_port_events},
+    {"low_network_%(low_network_ports)d",   "Ports connected to lower level caches (closer to main memory)", memEvent_port_events},
     {"high_network_%(high_network_ports)d", "Ports connected to higher level caches (closer to CPU)", memEvent_port_events},
     {NULL, NULL, NULL}
 };
