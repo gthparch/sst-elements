@@ -76,7 +76,7 @@ private:
 
 private:
   void configureParameters(SST::Params&);
-  void configureLinks();
+  void configureLinks(SST::Params&);
 
   void processIncomingRequest(SST::Event *ev);
   void processIncomingResponse(SST::Event *ev);  

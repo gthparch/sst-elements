@@ -14,13 +14,15 @@ using namespace std;
 using namespace SST;
 using namespace SST::MemHierarchy;
 
+#define likely(x) __builtin_expect ((x), 1)
+#define unlikely(x) __builtin_expect ((x), 0)
+
 MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 {
-  name = this->Component::getName();
   currentCycle = 0;
 
   configureParameters(params);
-  configureLinks();
+  configureLinks(params);
 
   for (unsigned i = 0; i < numStack; i++) {
     // PIM Mode
@@ -177,7 +179,7 @@ bool MyNetwork::clockTick(Cycle_t time)
   else {
     for (unsigned si = 0; si < numStack; si++) {
       unsigned numResponseSentThisCycle = 0;
-      for (auto& response : responseQueues[stackIdx]) {
+      for (auto& response : responseQueues[si]) {
         uint64_t readyCycle = response.second;
         if (readyCycle < currentCycle) { 
           SST::Event* ev = response.first;
@@ -270,7 +272,7 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
 
     // statistics
     requests[dstStackIdx]++;
-    latencyMap[dstStackIdx][me->getAddr()] = currentCycle;
+    latencyMap[me->getAddr()] = currentCycle;
   }
 }
 
@@ -326,10 +328,9 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
 
     uint64_t localAddress = me->getAddr();
     uint64_t flatAddress = convertToFlatAddress(localAddress, getMemoryCompInfo(srcLinkId)->getRangeStart());
-    uint64_t roundTripTime = currentCycle + latency - latencyMap[srcStackIdx][flatAddress];
+    uint64_t roundTripTime = currentCycle + latency - latencyMap[flatAddress];
     latencies += roundTripTime;
-
-    latencyMap[srcStackIdx].erase(flatAddress);
+    latencyMap.erase(flatAddress);
   }
 }
 
