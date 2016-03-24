@@ -24,15 +24,12 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
   configureParameters(params);
   configureLinks(params);
 
+  for (unsigned i = 0; i < numCore; i++) {
+    portToStackMap[highNetPorts[i]->getId()] = i;
+  }
+
   for (unsigned i = 0; i < numStack; i++) {
-    // PIM Mode
-    if (numCore > 1 && numStack > 1 && numCore == numStack) {
-      // store local port info
-      localPortMap[highNetPorts[i]->getId()] = lowNetPorts[i]->getId();
-      localPortMap[lowNetPorts[i]->getId()] = highNetPorts[i]->getId();
-      portToStackMap[highNetPorts[i]->getId()] = i;
-      portToStackMap[lowNetPorts[i]->getId()] = i;
-    }
+    portToStackMap[lowNetPorts[i]->getId()] = i;
 
     // initialize memory component info 
     MemoryCompInfo *mci = new MemoryCompInfo(i, numStack, stackSize, interleaveSize);
@@ -42,6 +39,15 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
     // initialize per-stack request and response queues
     requestQueues.push_back(map<SST::Event*, uint64_t>());
     responseQueues.push_back(map<SST::Event*, uint64_t>());
+  }
+
+  // PIM Mode
+  if (numCore > 1 && numStack > 1 && numCore == numStack) {
+    for (unsigned i = 0; i < numStack; i++) {
+      // store local port info
+      localPortMap[highNetPorts[i]->getId()] = lowNetPorts[i]->getId();
+      localPortMap[lowNetPorts[i]->getId()] = highNetPorts[i]->getId();
+    }
   }
 
   initializePacketCounter();
@@ -168,12 +174,6 @@ bool MyNetwork::clockTick(Cycle_t time)
 
       stackIdx = (stackIdx == numStack-1) ? 0 : stackIdx+1;
     }
-
-    for (unsigned stackIdx = 0; stackIdx < numStack; stackIdx++) {
-      for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
-        bandwidthUtilizationHistogram[stackIdx][accessTypeIdx][packetCounters[stackIdx][accessTypeIdx]] += 1;
-      }
-    }
   }
   // 1-to-N or N-to-1 Mode
   else {
@@ -227,6 +227,12 @@ bool MyNetwork::clockTick(Cycle_t time)
         dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  requests/responses to/from PIM[%u]\n", 
           currentCycle, packetCounters[si][static_cast<int>(AccessType::hp)], si);
       }
+    }
+  }
+
+  for (unsigned stackIdx = 0; stackIdx < numStack; stackIdx++) {
+    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
+      bandwidthUtilizationHistogram[stackIdx][accessTypeIdx][packetCounters[stackIdx][accessTypeIdx]] += 1;
     }
   }
 
@@ -343,7 +349,7 @@ void MyNetwork::sendRequest(SST::Event* ev)
 
   MemEvent* forwardEvent = new MemEvent(*me);
   forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), getMemoryCompInfo(dstLinkId)->getRangeStart()));
-  forwardEvent->setBaseAddr(convertToLocalAddress(me->getAddr(), getMemoryCompInfo(dstLinkId)->getRangeStart()));
+  forwardEvent->setBaseAddr(toBaseAddr(forwardEvent->getAddr()));
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
     unsigned srcStackIdx = getStackIdx(me->getDeliveryLink()->getId());
@@ -366,13 +372,13 @@ void MyNetwork::sendResponse(SST::Event* ev)
 
   MemEvent* forwardEvent = new MemEvent(*me);
   forwardEvent->setAddr(convertToFlatAddress(me->getAddr(), getMemoryCompInfo(srcLinkId)->getRangeStart()));
-  forwardEvent->setBaseAddr(convertToFlatAddress(me->getAddr(), getMemoryCompInfo(srcLinkId)->getRangeStart()));
+  forwardEvent->setBaseAddr(toBaseAddr(forwardEvent->getAddr()));
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
     unsigned srcStackIdx = getStackIdx(me->getDeliveryLink()->getId());
     unsigned dstStackIdx = getStackIdx(lookupNode(me->getDst()));
     dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
-        CommandString[me->getCmd()], me->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
+        CommandString[me->getCmd()], forwardEvent->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
   }
 
   dstLink->send(forwardEvent);
@@ -524,7 +530,7 @@ void MyNetwork::configureParameters(SST::Params& params)
   }
   else assert(0);
 
-  uint64_t stackSize = params.find_integer("stack_size", 0); // in MB
+  stackSize = params.find_integer("stack_size", 0); // in MB
   stackSize = stackSize * (1024*1024ul); // Convert into MBs
   interleaveSize = (uint64_t) params.find_integer("interleave_size", 4096);
 }
@@ -639,6 +645,11 @@ void MyNetwork::initStats()
       // initialization of stat-related variables goes here
       requests.push_back(0);
       responses.push_back(0);
+
+      bandwidthUtilizationHistogram.push_back(vector<map<unsigned, uint64_t>>());
+      for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
+        bandwidthUtilizationHistogram[si].push_back(map<unsigned, uint64_t>());
+      }
     }
   }
 }
@@ -658,66 +669,99 @@ void MyNetwork::printStats()
 
   stringstream statisticName;
   uint64_t count;
-  for (unsigned stackIdx = 0; stackIdx < numStack; ++stackIdx) {
-    uint64_t totalRequests = 0;
-    for_each(perStackRequests[stackIdx].begin(), perStackRequests[stackIdx].end(), 
-        [&totalRequests] (uint64_t req) { totalRequests += req; });
+  
+  if (likely(numCore > 1 && numStack > 1 && numCore == numStack)) {
+    for (unsigned stackIdx = 0; stackIdx < numStack; ++stackIdx) {
+      uint64_t totalRequests = 0;
+      for_each(perStackRequests[stackIdx].begin(), perStackRequests[stackIdx].end(), [&totalRequests] (uint64_t req) { totalRequests += req; });
+      dbg.debug(_L7_, "PIM[%u] total requests: %" PRIu64 "\n", stackIdx, totalRequests);
 
-    dbg.debug(_L7_, "PIM[%u] total requests: %" PRIu64 "\n", stackIdx, totalRequests);
+      statisticName.str(string()); statisticName << "local_request_pim_" << stackIdx;
+      uint64_t localRequests = perStackRequests[stackIdx][stackIdx];
+      writeTo(ofs, componentName, statisticName.str(), localRequests, localRequests);
+      dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, localRequests);
 
-    statisticName.str(string()); statisticName << "local_request_pim_" << stackIdx;
-    uint64_t localRequests = perStackRequests[stackIdx][stackIdx];
-    writeTo(ofs, componentName, statisticName.str(), localRequests, localRequests);
+      statisticName.str(string()); statisticName << "remote_request_pim_" << stackIdx;
+      uint64_t remoteRequests = totalRequests - localRequests;
+      writeTo(ofs, componentName, statisticName.str(), remoteRequests, remoteRequests);
+      dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, remoteRequests);
 
-    dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, localRequests);
+      for (unsigned j = 0; j < numStack; ++j) {
+        statisticName.str(string()); statisticName << "requests_from_pim_" << stackIdx << "_to_pim_" << j;
+        count = perStackRequests[stackIdx][j];
+        writeTo(ofs, componentName, statisticName.str(), count, count);
+        dbg.debug(_L7_, "requests from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
+      }
 
-    statisticName.str(string()); statisticName << "remote_request_pim_" << stackIdx;
-    uint64_t remoteRequests = totalRequests - localRequests;
-    writeTo(ofs, componentName, statisticName.str(), remoteRequests, remoteRequests);
+      for (unsigned j = 0; j < numStack; ++j) {
+        statisticName.str(string()); statisticName << "responses_from_pim_" << stackIdx << "_to_pim_" << j;
+        count = perStackResponses[stackIdx][j];
+        writeTo(ofs, componentName, statisticName.str(), count, count);
+        dbg.debug(_L7_, "responses from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
+      }
 
-    dbg.debug(_L7_, "PIM[%u] local requests: %" PRIu64 "\n", stackIdx, remoteRequests);
-
-    for (unsigned j = 0; j < numStack; ++j) {
-      statisticName.str(string()); statisticName << "requests_from_pim_" << stackIdx << "_to_pim_" << j;
-      count = perStackRequests[stackIdx][j];
+      statisticName.str(string()); statisticName << "local_request_avg_latency_pim_" << stackIdx;
+      count = (localRequests > 0) ? localRequestLatencies[stackIdx] / localRequests : 0;
       writeTo(ofs, componentName, statisticName.str(), count, count);
+      dbg.debug(_L7_, "PIM[%u] local requests average latency: %" PRIu64 "\n", stackIdx, count);
 
-      dbg.debug(_L7_, "requests from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
-    }
-
-    for (unsigned j = 0; j < numStack; ++j) {
-      statisticName.str(string()); statisticName << "responses_from_pim_" << stackIdx << "_to_pim_" << j;
-      count = perStackResponses[stackIdx][j];
+      statisticName.str(string()); statisticName << "remote_request_avg_latency_pim_" << stackIdx;
+      count = (remoteRequests > 0) ? remoteRequestLatencies[stackIdx] / remoteRequests : 0;
       writeTo(ofs, componentName, statisticName.str(), count, count);
+      dbg.debug(_L7_, "PIM[%u] remote requests average latency: %" PRIu64 "\n", stackIdx, count);
 
-      dbg.debug(_L7_, "responses from PIM[%u] to PIM[%u]: %" PRIu64 "\n", stackIdx, j, count);
+      uint64_t cycle = 0;
+      float percent = 0.0f;
+      for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
+        for (auto& histogramIterator : bandwidthUtilizationHistogram[stackIdx][accessTypeIdx]) {
+          statisticName.str(string()); 
+          statisticName << AccessTypeName[accessTypeIdx] << "_PIM_" << stackIdx << "_" << histogramIterator.first;
+          cycle = histogramIterator.second;
+          percent = 100*((float)cycle)/currentCycle;
+          writeTo(ofs, componentName, statisticName.str(), cycle, percent);
+        }
+      }
+
+      ofs << endl;
     }
+  }
+  // 1-to-N or N-to-1 Mode
+  else {
+    // 1-to-N
+    if (numCore == 1 && numStack > 1) {
+      uint64_t totalRequests = 0;
+      for_each(requests.begin(), requests.end(), [&totalRequests] (uint64_t req) { totalRequests += req; });
+      dbg.debug(_L7_, "total requests: %" PRIu64 "\n", totalRequests);
 
-    statisticName.str(string()); statisticName << "local_request_avg_latency_pim_" << stackIdx;
-    count = (localRequests > 0) ? localRequestLatencies[stackIdx] / localRequests : 0;
-    writeTo(ofs, componentName, statisticName.str(), count, count);
+      for (unsigned stackIdx = 0; stackIdx < numStack; ++stackIdx) {
+        statisticName.str(string()); statisticName << "requests_to_pim_" << stackIdx;
+        count = requests[stackIdx];
+        writeTo(ofs, componentName, statisticName.str(), count, count);
+        dbg.debug(_L7_, "requests to PIM[%u]: %" PRIu64 "\n", stackIdx, count);
 
-    dbg.debug(_L7_, "PIM[%u] local requests average latency: %" PRIu64 "\n", stackIdx, count);
+        statisticName.str(string()); statisticName << "avg_latency_to_pim_" << stackIdx;
+        count = (requests[stackIdx] > 0) ? latencies / requests[stackIdx] : 0;
+        writeTo(ofs, componentName, statisticName.str(), count, count);
+        dbg.debug(_L7_, "average latency to PIM[%u]: %" PRIu64 "\n", stackIdx, count);
 
-    statisticName.str(string()); statisticName << "remote_request_avg_latency_pim_" << stackIdx;
-    count = (remoteRequests > 0) ? remoteRequestLatencies[stackIdx] / remoteRequests : 0;
-    writeTo(ofs, componentName, statisticName.str(), count, count);
+        uint64_t cycle = 0;
+        float percent = 0.0f;
+        for (auto& histogramIterator : bandwidthUtilizationHistogram[stackIdx][static_cast<unsigned>(AccessType::hp)]) {
+          statisticName.str(string()); 
+          statisticName << AccessTypeName[static_cast<unsigned>(AccessType::hp)] << "_" << stackIdx << "_" << histogramIterator.first;
+          cycle = histogramIterator.second;
+          percent = 100*((float)cycle)/currentCycle;
+          writeTo(ofs, componentName, statisticName.str(), cycle, percent);
+        }
 
-    dbg.debug(_L7_, "PIM[%u] remote requests average latency: %" PRIu64 "\n", stackIdx, count);
-
-    uint64_t cycle = 0;
-    float percent = 0.0f;
-    for (unsigned accessTypeIdx = 0; accessTypeIdx < static_cast<unsigned>(AccessType::max); accessTypeIdx++) {
-      for (auto& histogramIterator : bandwidthUtilizationHistogram[stackIdx][accessTypeIdx]) {
-        statisticName.str(string()); 
-        statisticName << AccessTypeName[accessTypeIdx] << "_PIM_" << stackIdx << "_" << histogramIterator.first;
-        cycle = histogramIterator.second;
-        percent = 100*((float)cycle)/currentCycle;
-        writeTo(ofs, componentName, statisticName.str(), cycle, percent);
+        ofs << endl;
       }
     }
-
-    ofs << endl;
+    // N-to-1
+    else if (numCore > 1 && numStack == 1) {
+    }
+    else {
+    }
   }
 
   ofs.close();

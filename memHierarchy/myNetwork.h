@@ -39,16 +39,16 @@ private:
     {
       m_rangeStart = interleaveSize * idx;
       m_rangeEnd = stackSize * numStack - interleaveSize * (numStack - idx - 1);
-      interleaveSize = interleaveSize;
+      m_interleaveSize = interleaveSize;
       m_interleaveStep = interleaveSize * numStack;
     }
     
     bool contains(uint64_t addr) const 
     {
       if (addr < m_rangeStart || m_rangeEnd <= addr) return false;
-      if (interleaveSize == 0) return true;
+      if (m_interleaveSize == 0) return true;
       uint64_t offset = (addr - m_rangeStart) % m_interleaveStep;
-      return (offset < interleaveSize);
+      return (offset < m_interleaveSize);
     }
 
     bool operator<(const MemoryCompInfo &m) const 
@@ -58,19 +58,19 @@ private:
 
     friend ostream& operator<<(ostream& os, const MemoryCompInfo& mci)
     {
-      os << "range (" << mci.m_rangeStart << ", " << mci.m_rangeEnd << ") interleaveSize: " << mci.interleaveSize;
+      os << "range (" << mci.m_rangeStart << ", " << mci.m_rangeEnd << ") interleaveSize: " << mci.m_interleaveSize;
       return os;
     }
 
     uint64_t getRangeStart(void) const { return m_rangeStart; }
     uint64_t getRangeEnd(void) const { return m_rangeEnd; }
-    uint64_t getInterleaveSize(void) const { return interleaveSize; }
+    uint64_t getInterleaveSize(void) const { return m_interleaveSize; }
     uint64_t getInterleaveStep(void) const { return m_interleaveStep; }
 
   private:
     uint64_t m_rangeStart;
     uint64_t m_rangeEnd;
-    uint64_t interleaveSize;
+    uint64_t m_interleaveSize;
     uint64_t m_interleaveStep;
   };
 
@@ -81,6 +81,7 @@ private:
   void processIncomingRequest(SST::Event *ev);
   void processIncomingResponse(SST::Event *ev);  
 
+  uint64_t toBaseAddr(uint64_t addr) { return (addr) & ~(packetSize - 1); }
   void sendRequest(SST::Event *ev);
   void sendResponse(SST::Event *ev);
   
