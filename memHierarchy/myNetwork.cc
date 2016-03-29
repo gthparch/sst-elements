@@ -20,6 +20,7 @@ using namespace SST::MemHierarchy;
 MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 {
   currentCycle = 0;
+  pageSize = 4096;
 
   configureParameters(params);
   configureLinks(params);
@@ -32,13 +33,22 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
     portToStackMap[lowNetPorts[i]->getId()] = i;
 
     // initialize memory component info 
-    MemoryCompInfo *mci = new MemoryCompInfo(i, numStack, stackSize, interleaveSize);
-    linkToMemoryCompInfoMap[lowNetPorts[i]->getId()] = mci;
+    MemoryCompInfo *mci = NULL;
+    // memory component info for fine-grain region
+    mci= new MemoryCompInfo(i, numStack, 0, stackSize/2, interleaveSize);
+    linkToMemoryCompInfoMapForFGR[lowNetPorts[i]->getId()] = mci;
+    cout << *mci << endl;
+    // memory component info for coarse-grain region
+    mci = new MemoryCompInfo(i, numStack, numStack*stackSize/2, stackSize, pageSize);
+    linkToMemoryCompInfoMapForCGR[lowNetPorts[i]->getId()] = mci;
     cout << *mci << endl;
 
     // initialize per-stack request and response queues
     requestQueues.push_back(map<SST::Event*, uint64_t>());
     responseQueues.push_back(map<SST::Event*, uint64_t>());
+
+    localToFlatMap.push_back(map<uint64_t, uint64_t>());
+    flatToLocalMap.push_back(map<uint64_t, uint64_t>());
   }
 
   // PIM Mode
@@ -55,7 +65,9 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 
 MyNetwork::~MyNetwork() 
 {
-  for_each(linkToMemoryCompInfoMap.begin(), linkToMemoryCompInfoMap.end(), [] (pair<LinkId_t, 
+  for_each(linkToMemoryCompInfoMapForFGR.begin(), linkToMemoryCompInfoMapForFGR.end(), [] (pair<LinkId_t, 
+    MemoryCompInfo*>&& it) { delete it.second; });
+  for_each(linkToMemoryCompInfoMapForCGR.begin(), linkToMemoryCompInfoMapForCGR.end(), [] (pair<LinkId_t, 
     MemoryCompInfo*>&& it) { delete it.second; });
 }
 
@@ -301,7 +313,7 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
 
     // statistics
     uint64_t localAddress = me->getAddr();
-    uint64_t flatAddress = convertToFlatAddress(localAddress, getMemoryCompInfo(srcLinkId)->getRangeStart());
+    uint64_t flatAddress = localToFlatMap[srcStackIdx][localAddress];
 
     uint64_t roundTripTime = 0;
     if (localAccess) {
@@ -315,9 +327,9 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     perStackLatencyMaps[dstStackIdx].erase(flatAddress);
     perStackResponses[srcStackIdx][dstStackIdx]++;
 
-    if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-      dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " src:%s dst:%s currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
-        CommandString[me->getCmd()], flatAddress, me->getSrc().c_str(), me->getDst().c_str(), currentCycle, readyCycle);
+    if (DEBUG_ALL || DEBUG_ADDR == flatAddress) {
+      dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " dst:%s currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
+        CommandString[me->getCmd()], flatAddress, me->getDst().c_str(), currentCycle, readyCycle);
     }
   }
   // 1-to-N or N-to-1 Mode
@@ -333,7 +345,7 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     responses[srcStackIdx]++;
 
     uint64_t localAddress = me->getAddr();
-    uint64_t flatAddress = convertToFlatAddress(localAddress, getMemoryCompInfo(srcLinkId)->getRangeStart());
+    uint64_t flatAddress = convertToFlatAddress(localAddress, getMemoryCompInfoForFGR(srcLinkId)->getRangeStart(), false);
     uint64_t roundTripTime = currentCycle + latency - latencyMap[flatAddress];
     latencies += roundTripTime;
     latencyMap.erase(flatAddress);
@@ -347,15 +359,46 @@ void MyNetwork::sendRequest(SST::Event* ev)
   LinkId_t dstLinkId = lookupNode(me->getAddr());
   SST::Link* dstLink = getLink(dstLinkId);
 
+  unsigned srcStackIdx = getStackIdx(me->getDeliveryLink()->getId());
+  unsigned dstStackIdx = getStackIdx(lookupNode(me->getAddr()));
+
   MemEvent* forwardEvent = new MemEvent(*me);
-  forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), getMemoryCompInfo(dstLinkId)->getRangeStart()));
-  forwardEvent->setBaseAddr(toBaseAddr(forwardEvent->getAddr()));
+  if (getMemoryCompInfoForFGR(dstLinkId)->contains(me->getAddr())) {
+    forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), getMemoryCompInfoForFGR(dstLinkId)->getRangeStart(), false));
+    forwardEvent->setBaseAddr(toBaseAddr(forwardEvent->getAddr()));
+    forwardEvent->setVirtualAddress(me->getAddr());
+  }
+  else {
+    if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
+      dbg.debug(_L7_,"CGR %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 "\n", 
+          CommandString[me->getCmd()], me->getAddr(), currentCycle);
+    }
+    forwardEvent->setAddr(convertToLocalAddress(me->getAddr(), getMemoryCompInfoForCGR(dstLinkId)->getRangeStart(), true));
+    forwardEvent->setBaseAddr(toBaseAddr(forwardEvent->getAddr()));
+    forwardEvent->setVirtualAddress(me->getAddr());
+  }
+
+  flatToLocalMap[dstStackIdx][me->getAddr()] = forwardEvent->getAddr();
+  localToFlatMap[dstStackIdx][forwardEvent->getAddr()] = me->getAddr();
+  outstandingRequests[me->getAddr()] += 1;
+
+  dbg.debug(_L7_,"flatToLocalMap[%u] inserting flat:0x%" PRIx64 " local:0x%" PRIx64 "\n", 
+      dstStackIdx, me->getAddr(), forwardEvent->getAddr());
+  dbg.debug(_L7_,"localToFlatMap[%u] inserting local:0x%" PRIx64 " flat:0x%" PRIx64 "\n", 
+      dstStackIdx, forwardEvent->getAddr(), me->getAddr());
+  dbg.debug(_L7_,"flatToLocalMap [%lu][%lu][%lu][%lu]\n",
+      flatToLocalMap[0].size(), flatToLocalMap[1].size(),
+      flatToLocalMap[2].size(), flatToLocalMap[3].size());
+  dbg.debug(_L7_,"localToFlatMap [%lu][%lu][%lu][%lu]\n",
+      localToFlatMap[0].size(), localToFlatMap[1].size(),
+      localToFlatMap[2].size(), localToFlatMap[3].size());
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    unsigned srcStackIdx = getStackIdx(me->getDeliveryLink()->getId());
-    unsigned dstStackIdx = getStackIdx(lookupNode(me->getAddr()));
-    dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
-        CommandString[me->getCmd()], me->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
+    dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " (localAddr:0x%" PRIx64 ") at currentCycle: %" PRIu64 " from %u to %u\n", 
+        CommandString[me->getCmd()], me->getAddr(), forwardEvent->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
+
+    dbg.debug(_L3_,"la: 0x%" PRIx64 " base la: 0x%" PRIx64 " va: 0x%" PRIx64 "\n", 
+        forwardEvent->getAddr(), forwardEvent->getBaseAddr(), forwardEvent->getVirtualAddress());
   }
 
   dstLink->send(forwardEvent);
@@ -370,15 +413,45 @@ void MyNetwork::sendResponse(SST::Event* ev)
   LinkId_t dstLinkId = lookupNode(me->getDst());
   SST::Link* dstLink = getLink(dstLinkId);
 
+  unsigned srcStackIdx = getStackIdx(srcLinkId);
+  unsigned dstStackIdx = getStackIdx(dstLinkId);
+
   MemEvent* forwardEvent = new MemEvent(*me);
-  forwardEvent->setAddr(convertToFlatAddress(me->getAddr(), getMemoryCompInfo(srcLinkId)->getRangeStart()));
+  uint64_t flatAddress = localToFlatMap[srcStackIdx][me->getAddr()];
+  forwardEvent->setAddr(flatAddress);
   forwardEvent->setBaseAddr(toBaseAddr(forwardEvent->getAddr()));
 
-  if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    unsigned srcStackIdx = getStackIdx(me->getDeliveryLink()->getId());
-    unsigned dstStackIdx = getStackIdx(lookupNode(me->getDst()));
+  dbg.debug(_L7_,"localToFlatMap[%u] erasing local:0x%" PRIx64 " flat:0x%" PRIx64 "\n", 
+      srcStackIdx, me->getAddr(), forwardEvent->getAddr());
+  dbg.debug(_L7_,"flatToLocalMap[%u] erasing flat:0x%" PRIx64 " local:0x%" PRIx64 "\n", 
+      srcStackIdx, forwardEvent->getAddr(), me->getAddr());
+
+  outstandingRequests[flatAddress] -= 1;
+
+  if (outstandingRequests[flatAddress] == 0) {
+    localToFlatMap[srcStackIdx].erase(localToFlatMap[srcStackIdx].find(me->getAddr()));
+    flatToLocalMap[srcStackIdx].erase(flatToLocalMap[srcStackIdx].find(flatAddress));
+    dbg.debug(_L7_,"flatToLocalMap [%lu][%lu][%lu][%lu]\n",
+        flatToLocalMap[0].size(), flatToLocalMap[1].size(),
+        flatToLocalMap[2].size(), flatToLocalMap[3].size());
+    dbg.debug(_L7_,"localToFlatMap [%lu][%lu][%lu][%lu]\n",
+        localToFlatMap[0].size(), localToFlatMap[1].size(),
+        localToFlatMap[2].size(), localToFlatMap[3].size());
+  }
+
+  if (getMemoryCompInfoForCGR(srcLinkId)->contains(flatAddress)) {
+    if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
+      dbg.debug(_L3_,"CGR %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 "\n", 
+          CommandString[me->getCmd()], forwardEvent->getAddr(), currentCycle);
+    }
+  }
+
+  if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
     dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
         CommandString[me->getCmd()], forwardEvent->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
+
+    dbg.debug(_L3_,"fa: 0x%" PRIx64 " base fa: 0x%" PRIx64 " va: 0x%" PRIx64 "\n", 
+        forwardEvent->getAddr(), forwardEvent->getBaseAddr(), forwardEvent->getVirtualAddress());
   }
 
   dstLink->send(forwardEvent);
@@ -398,16 +471,28 @@ void MyNetwork::mapNodeEntry(const string& name, LinkId_t id)
 LinkId_t MyNetwork::lookupNode(const uint64_t addr) 
 {
   LinkId_t dstLinkId = -1;
-  for (auto it : linkToMemoryCompInfoMap) {
+
+  // lookup in the FGR memory components
+  for (auto it : linkToMemoryCompInfoMapForFGR) {
     if (it.second->contains(addr)) {
       dstLinkId = it.first;
+      dbg.debug(_L3_,"0x%" PRIx64 " found in FGR in %u\n", addr, getStackIdx(dstLinkId));
+    }
+  }
+
+  // lookup in the CGR memory components
+  for (auto it : linkToMemoryCompInfoMapForCGR) {
+    if (it.second->contains(addr)) {
+      dstLinkId = it.first;
+      dbg.debug(_L3_,"0x%" PRIx64 " found in CGR in %u\n", addr, getStackIdx(dstLinkId));
     }
   }
 
   if (dstLinkId == -1) {
-    dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup for address 0x%" PRIx64 "failed\n", 
+    dbg.fatal(CALL_INFO, -1, "%s, Error: MyNetwork lookup for address 0x%" PRIx64 " failed\n", 
         getName().c_str(), addr);
   }
+
   return dstLinkId;
 }
 
@@ -421,20 +506,22 @@ LinkId_t MyNetwork::lookupNode(const string& name)
   return it->second;
 }
 
-uint64_t MyNetwork::convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart)
+uint64_t MyNetwork::convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart, bool cgr)
 {
+  uint64_t ig = cgr ? pageSize : interleaveSize;
   uint64_t localAddress = 0;
 
-  if (interleaveSize == 0) {
+  if (ig == 0) {
     localAddress = requestedAddress - rangeStart;
   } else {
-    uint64_t interleaveStep = interleaveSize * numStack;
+    uint64_t interleaveStep = ig * numStack;
 
     Addr addr = requestedAddress - rangeStart;
     Addr step = addr / interleaveStep;
     Addr offset = addr % interleaveStep;
 
-    localAddress = (step * interleaveSize) + offset;
+    localAddress = (step * ig) + offset;
+    localAddress += (cgr ? stackSize / 2 : 0);
   }
 
   if (DEBUG_ALL || requestedAddress == DEBUG_ADDR) {
@@ -445,18 +532,20 @@ uint64_t MyNetwork::convertToLocalAddress(uint64_t requestedAddress, uint64_t ra
   return localAddress;
 }
 
-uint64_t MyNetwork::convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart)
+uint64_t MyNetwork::convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart, bool cgr)
 {
+  uint64_t ig = cgr ? pageSize : interleaveSize;
   uint64_t flatAddress = 0;
 
-  if (interleaveSize == 0) {
+  if (ig == 0) {
     flatAddress = localAddress + rangeStart;
   } else {
-    uint64_t interleaveStep = interleaveSize * numStack;
+    uint64_t interleaveStep = ig * numStack;
 
     Addr addr = localAddress;
-    Addr step = addr / interleaveSize; 
-    Addr offset = addr % interleaveSize;
+    addr -= (cgr ? stackSize / 2 : 0);
+    Addr step = addr / ig; 
+    Addr offset = addr % ig;
 
     flatAddress = (step * interleaveStep) + offset;
     flatAddress = flatAddress + rangeStart;

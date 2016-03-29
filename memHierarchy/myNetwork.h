@@ -35,43 +35,43 @@ private:
   class MemoryCompInfo 
   {
   public: 
-    MemoryCompInfo(unsigned idx, unsigned numStack, uint64_t stackSize, uint64_t interleaveSize) 
+    MemoryCompInfo(unsigned idx, unsigned numStack, uint64_t startAddr, uint64_t stackSize, uint64_t _interleaveSize) 
     {
-      m_rangeStart = interleaveSize * idx;
-      m_rangeEnd = stackSize * numStack - interleaveSize * (numStack - idx - 1);
-      m_interleaveSize = interleaveSize;
-      m_interleaveStep = interleaveSize * numStack;
+      rangeStart = startAddr + _interleaveSize * idx;
+      rangeEnd = stackSize * numStack - _interleaveSize * (numStack - idx - 1);
+      interleaveSize = _interleaveSize;
+      interleaveStep = _interleaveSize * numStack;
     }
     
     bool contains(uint64_t addr) const 
     {
-      if (addr < m_rangeStart || m_rangeEnd <= addr) return false;
-      if (m_interleaveSize == 0) return true;
-      uint64_t offset = (addr - m_rangeStart) % m_interleaveStep;
-      return (offset < m_interleaveSize);
+      if (addr < rangeStart || rangeEnd <= addr) return false;
+      if (interleaveSize == 0) return true;
+      uint64_t offset = (addr - rangeStart) % interleaveStep;
+      return (offset < interleaveSize);
     }
 
     bool operator<(const MemoryCompInfo &m) const 
     {
-      return (m_rangeStart < m.m_rangeStart);
+      return (rangeStart < m.rangeStart);
     }
 
     friend ostream& operator<<(ostream& os, const MemoryCompInfo& mci)
     {
-      os << "range (" << mci.m_rangeStart << ", " << mci.m_rangeEnd << ") interleaveSize: " << mci.m_interleaveSize;
+      os << "range (" << hex << mci.rangeStart << ", " << mci.rangeEnd << dec << ") interleaveSize: " << mci.interleaveSize;
       return os;
     }
 
-    uint64_t getRangeStart(void) const { return m_rangeStart; }
-    uint64_t getRangeEnd(void) const { return m_rangeEnd; }
-    uint64_t getInterleaveSize(void) const { return m_interleaveSize; }
-    uint64_t getInterleaveStep(void) const { return m_interleaveStep; }
+    uint64_t getRangeStart(void) const { return rangeStart; }
+    uint64_t getRangeEnd(void) const { return rangeEnd; }
+    uint64_t getInterleaveSize(void) const { return interleaveSize; }
+    uint64_t getInterleaveStep(void) const { return interleaveStep; }
 
   private:
-    uint64_t m_rangeStart;
-    uint64_t m_rangeEnd;
-    uint64_t m_interleaveSize;
-    uint64_t m_interleaveStep;
+    uint64_t rangeStart;
+    uint64_t rangeEnd;
+    uint64_t interleaveSize;
+    uint64_t interleaveStep;
   };
 
 private:
@@ -81,7 +81,7 @@ private:
   void processIncomingRequest(SST::Event *ev);
   void processIncomingResponse(SST::Event *ev);  
 
-  uint64_t toBaseAddr(uint64_t addr) { return (addr) & ~(packetSize - 1); }
+  uint64_t toBaseAddr(uint64_t addr) const { return addr & ~(packetSize - 1); }
   void sendRequest(SST::Event *ev);
   void sendResponse(SST::Event *ev);
   
@@ -91,8 +91,8 @@ private:
   LinkId_t lookupNode(const uint64_t);
   LinkId_t lookupNode(const string& name);
 
-  uint64_t convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart);
-  uint64_t convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart);
+  uint64_t convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart, bool cgr);
+  uint64_t convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart, bool cgr);
 
   void initializePacketCounter();
   void resetPacketCounter();
@@ -100,8 +100,8 @@ private:
   bool isLocalAccess(LinkId_t src, LinkId_t dst) { return (dst == localPortMap[src]); }
   unsigned getStackIdx(LinkId_t lid) { return portToStackMap[lid]; }
   SST::Link* getLink(LinkId_t lid) { return linkIdToLinkMap[lid]; }
-  MemoryCompInfo* getMemoryCompInfo(LinkId_t lid) { return linkToMemoryCompInfoMap[lid]; }
-
+  MemoryCompInfo* getMemoryCompInfoForFGR(LinkId_t lid) { return linkToMemoryCompInfoMapForFGR[lid]; }
+  MemoryCompInfo* getMemoryCompInfoForCGR(LinkId_t lid) { return linkToMemoryCompInfoMapForCGR[lid]; }
   
   void initStats();
   void printStats();
@@ -137,7 +137,7 @@ private:
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
 
-  unsigned packetSize;
+  uint64_t packetSize;
 
   // per-stack request queue; request and its ready cycle
   vector<map<SST::Event*, uint64_t>> requestQueues;
@@ -157,7 +157,11 @@ private:
   vector<SST::Link*> lowNetPorts;
 
   map<string, LinkId_t> nameToLinkIdMap;
-  map<LinkId_t, MemoryCompInfo*> linkToMemoryCompInfoMap;
+  map<LinkId_t, MemoryCompInfo*> linkToMemoryCompInfoMapForFGR;
+  map<LinkId_t, MemoryCompInfo*> linkToMemoryCompInfoMapForCGR;
+  vector<map<uint64_t, uint64_t>> flatToLocalMap;
+  vector<map<uint64_t, uint64_t>> localToFlatMap;
+  map<uint64_t, uint64_t> outstandingRequests;
 
   map<LinkId_t, LinkId_t> localPortMap;
   map<LinkId_t, unsigned> portToStackMap;
@@ -168,6 +172,7 @@ private:
 
   uint64_t interleaveSize;
   uint64_t stackSize;
+  uint64_t pageSize;
 
   uint64_t currentCycle;
   
