@@ -8,16 +8,20 @@
 #include "ramulator/src/Statistics.h"
 #include "ramulatorBackend.h"
 
+Ramulator *Ramulator::head = NULL;
+
 Ramulator::Ramulator(Component *comp, Params &params) : MemBackend(comp, params)
 {
+    if (head == NULL) head = this;
+
     string config = params.find_string("config", NO_STRING_DEFINED);
     if (NO_STRING_DEFINED == config)
         ctrl->dbg.fatal(CALL_INFO, -1, "Model must define a 'config' file parameter\n");
 
     unsigned cacheline = (unsigned)params.find_integer("cacheline", 64);
 
-    Stats::statlist.output(comp->getName() + ".HBM.stat.out");
-    initialize(config, cacheline);
+    if (head == this) Stats::statlist.output("HBM.stat.out");
+    initialize(comp->getName(), config, cacheline);
 }
 
 Ramulator::~Ramulator() 
@@ -25,11 +29,11 @@ Ramulator::~Ramulator()
     delete mem;
 }
 
-void Ramulator::initialize(string config, int cacheline)
+void Ramulator::initialize(const string& identifier, const string& config, int cacheline)
 {
     configs = ramulator::Config(config);
     configs.set_core_num(1); // TODO
-    mem = MemoryFactory<HBM>::create(configs, cacheline);
+    mem = MemoryFactory<HBM>::create(identifier, configs, cacheline);
     tCK = mem->clk_ns();
 }
 
@@ -62,11 +66,11 @@ bool Ramulator::issueRequest(DRAMReq *req)
 void Ramulator::clock()
 {
     mem->tick();
-    Stats::curTick++;
+    if (head == this) Stats::curTick++;
 }
 
 void Ramulator::finish()
 {
     mem->finish();
-    Stats::statlist.printall();
+    if (head == this) Stats::statlist.printall();
 }

@@ -16,7 +16,7 @@ public:
     Ramulator(SST::Component *comp, SST::Params &params);
     ~Ramulator();
 
-    void initialize(string config, int cacheline);
+    void initialize(const string& identifier, const string& config, int cacheline);
 
     virtual bool issueRequest(DRAMReq *req);
     virtual void clock();
@@ -29,6 +29,8 @@ private:
     ramulator::Config configs;
     double tCK;
     map<uint64_t, deque<DRAMReq*> > memReqs;
+
+    static Ramulator *head;
 }; // class Ramulator
 
 #endif
