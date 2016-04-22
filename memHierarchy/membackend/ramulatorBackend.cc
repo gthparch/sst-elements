@@ -5,6 +5,7 @@
 #include "ramulator/src/Request.h"
 #include "ramulator/src/MemoryFactory.h"
 #include "ramulator/src/HBM.h"
+#include "ramulator/src/Statistics.h"
 #include "ramulatorBackend.h"
 
 Ramulator::Ramulator(Component *comp, Params &params) : MemBackend(comp, params)
@@ -15,6 +16,7 @@ Ramulator::Ramulator(Component *comp, Params &params) : MemBackend(comp, params)
 
     unsigned cacheline = (unsigned)params.find_integer("cacheline", 64);
 
+    Stats::statlist.output(comp->getName() + ".HBM.stat.out");
     initialize(config, cacheline);
 }
 
@@ -60,9 +62,11 @@ bool Ramulator::issueRequest(DRAMReq *req)
 void Ramulator::clock()
 {
     mem->tick();
+    Stats::curTick++;
 }
 
 void Ramulator::finish()
 {
     mem->finish();
+    Stats::statlist.printall();
 }
