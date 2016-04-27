@@ -16,7 +16,11 @@
 using namespace SST;
 using namespace SST::MemHierarchy;
 
+std::atomic<int> DRAMSimMemory::count(0);
+
 DRAMSimMemory::DRAMSimMemory(Component *comp, Params &params) : MemBackend(comp, params){
+    id = count++;
+
     std::string deviceIniFilename = params.find_string("device_ini", NO_STRING_DEFINED);
     if(NO_STRING_DEFINED == deviceIniFilename)
         ctrl->dbg.fatal(CALL_INFO, -1, "Model must define a 'device_ini' file parameter\n");
@@ -42,6 +46,10 @@ DRAMSimMemory::DRAMSimMemory(Component *comp, Params &params) : MemBackend(comp,
             this, &DRAMSimMemory::dramSimDone);
 
     memSystem->RegisterCallbacks(readDataCB, writeDataCB, NULL);
+
+    cycle = 0;
+    bytesPerTransaction = 64;
+    totalTransactions = 0;
 }
 
 
@@ -61,6 +69,16 @@ bool DRAMSimMemory::issueRequest(DRAMReq *req){
 
 void DRAMSimMemory::clock(){
     memSystem->update();
+
+    if (++cycle % 1000 == 0) {
+      uint64_t totalBytesTransferred = totalTransactions * bytesPerTransaction;
+      double seconds = (double)cycle * 0.5 * 1E-9;
+      double totalBandwidth = (double)totalBytesTransferred / (1024.0*1024.0*1024.0) / seconds;
+
+      printf("stack[%d] bandwidth: %f GB/s\n", id, totalBandwidth);
+      cycle = 0;
+      totalTransactions = 0;
+    }
 }
 
 
@@ -81,4 +99,5 @@ void DRAMSimMemory::dramSimDone(unsigned int id, uint64_t addr, uint64_t clockcy
         dramReqs.erase(addr);
 
     ctrl->handleMemResponse(req);
+    ++totalTransactions;
 }

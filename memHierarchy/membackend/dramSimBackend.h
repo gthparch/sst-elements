@@ -21,6 +21,7 @@
 #endif
 
 #include <DRAMSim.h>
+#include <atomic>
 
 #ifdef OLD_DEBUG
 #define DEBUG OLD_DEBUG
@@ -42,6 +43,13 @@ protected:
 
     DRAMSim::MultiChannelMemorySystem *memSystem;
     std::map<uint64_t, std::deque<DRAMReq*> > dramReqs;
+
+    uint64_t cycle;
+    uint64_t bytesPerTransaction;
+    uint64_t totalTransactions;
+
+    unsigned id;
+    static std::atomic<int> count;
 };
 
 }
