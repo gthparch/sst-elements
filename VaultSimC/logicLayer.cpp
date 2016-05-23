@@ -25,27 +25,27 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
     // Debug and Output Initialization
     out.init("", 0, 0, Output::STDOUT);
 
-    int debugLevel = params.find_integer("debug_level", 0);
-    dbg.init("@R:LogicLayer::@p():@l " + getName() + ": ", debugLevel, 0, (Output::output_location_t)params.find_integer("debug", 0));
+    int debugLevel = params.find("debug_level", 0);
+    dbg.init("@R:LogicLayer::@p():@l " + getName() + ": ", debugLevel, 0, (Output::output_location_t)(int)params.find("debug", 0));
     if(debugLevel < 0 || debugLevel > 10)
         dbg.fatal(CALL_INFO, -1, "Debugging level must be between 0 and 10. \n");
 
     // logicLayer Params Initialization
-    int ident = params.find_integer("llID", -1);
+    int ident = params.find("llID", -1);
     if (-1 == ident)
         dbg.fatal(CALL_INFO, -1, "llID not defined\n");
     llID = ident;
 
     // request limit
-    reqLimitPerWindow = params.find_integer("req_LimitPerWindow", -1);
+    reqLimitPerWindow = params.find("req_LimitPerWindow", -1);
     if (0 >= reqLimitPerWindow)
         dbg.fatal(CALL_INFO, -1, " req_LimitPerWindow not defined well\n");
 
-    reqLimitWindowSize = params.find_integer("req_LimitWindowSize", 1);
+    reqLimitWindowSize = params.find("req_LimitWindowSize", 1);
     if (0 >= reqLimitWindowSize)
         dbg.fatal(CALL_INFO, -1, " req_LimitWindowSize not defined well\n");
 
-    int test = params.find_integer("req_LimitPerCycle", -1);
+    int test = params.find("req_LimitPerCycle", -1);
     if (test != -1)
         dbg.fatal(CALL_INFO, -1, "req_LimitPerCycle ***DEPRECATED** kept for compatibility: use req_LimitPerWindow & req_LimitWindowSize in your configuration\n");
 
@@ -57,22 +57,22 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
     currentLimitWindowNum = reqLimitWindowSize;
 
     //
-    int mask = params.find_integer("LL_MASK", -1);
+    int mask = params.find("LL_MASK", -1);
     if (-1 == mask)
         dbg.fatal(CALL_INFO, -1, " LL_MASK not defined\n");
     LL_MASK = mask;
 
-    haveQuad = params.find_integer("have_quad", 0);
+    haveQuad = params.find("have_quad", 0);
 
-    numVaultPerQuad = params.find_integer("num_vault_per_quad", 4);
+    numVaultPerQuad = params.find("num_vault_per_quad", 4);
     numVaultPerQuad2 = log(numVaultPerQuad) / log(2);
 
-    bool terminal = params.find_integer("terminal", 0);
+    bool terminal = params.find("terminal", 0);
 
-    CacheLineSize = params.find_integer("cacheLineSize", 64);
+    CacheLineSize = params.find("cacheLineSize", 64);
     CacheLineSizeLog2 = log(CacheLineSize) / log(2);
 
-    numVaults = params.find_integer("vaults", -1);
+    numVaults = params.find("vaults", -1);
     numVaults2 = log(numVaults) / log(2);
     if (-1 == numVaults)
         dbg.fatal(CALL_INFO, -1, "numVaults not defined\n");
@@ -149,7 +149,7 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
     dbg.debug(_INFO_, "Making LogicLayer with id=%d & clock=%s\n", llID, frequency.c_str());
 
     // Stats Initialization
-    statsFormat = params.find_integer("statistics_format", 0);
+    statsFormat = params.find("statistics_format", 0);
 
     memOpsProcessed = registerStatistic<uint64_t>("Total_memory_ops_processed", "0");
     HMCOpsProcessed = registerStatistic<uint64_t>("HMC_ops_processed", "0");

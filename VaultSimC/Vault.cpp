@@ -21,31 +21,31 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     // Debug and Output Initialization
     out.init("", 0, 0, Output::STDOUT);
 
-    int debugLevel = params.find_integer("debug_level", 0);
+    int debugLevel = params.find("debug_level", 0);
     if (debugLevel < 0 || debugLevel > 10)
         dbg.fatal(CALL_INFO, -1, "Debugging level must be between 0 and 10. \n");
-    dbg.init("@R:Vault::@p():@l: ", debugLevel, 0, (Output::output_location_t)params.find_integer("debug", 0));
+    dbg.init("@R:Vault::@p():@l: ", debugLevel, 0, (Output::output_location_t)(int)params.find("debug", 0));
 
-    dbgOnFlyHmcOpsIsOn = params.find_integer("debug_OnFlyHmcOps", 0);
+    dbgOnFlyHmcOpsIsOn = params.find("debug_OnFlyHmcOps", 0);
     dbgOnFlyHmcOps.init("onFlyHmcOps: ", 0, 0, (Output::output_location_t)dbgOnFlyHmcOpsIsOn);
     if (1 == dbgOnFlyHmcOpsIsOn) {
-        dbgOnFlyHmcOpsThresh = params.find_integer("debug_OnFlyHmcOpsThresh", -1);
+        dbgOnFlyHmcOpsThresh = params.find("debug_OnFlyHmcOpsThresh", -1);
         if (-1 == dbgOnFlyHmcOpsThresh)
             dbg.fatal(CALL_INFO, -1, "vault.debug_OnFlyHmcOpsThresh is set to 1, definition of vault.debug_OnFlyHmcOpsThresh is required as well");
     }
 
-    statsFormat = params.find_integer("statistics_format", 0);
+    statsFormat = params.find("statistics_format", 0);
 
     // HMC Cost Initialization
-    HMCCostLogicalOps = params.find_integer("HMCCost_LogicalOps", 0);
-    HMCCostCASOps = params.find_integer("HMCCost_CASOps", 0);
-    HMCCostCompOps = params.find_integer("HMCCost_CompOps", 0);
-    HMCCostAdd8 = params.find_integer("HMCCost_Add8", 0);
-    HMCCostAdd16 = params.find_integer("HMCCost_Add16", 0);
-    HMCCostAddDual = params.find_integer("HMCCost_AddDual", 0);
-    HMCCostFPAdd = params.find_integer("HMCCost_FPAdd", 0);
-    HMCCostSwap = params.find_integer("HMCCost_Swap", 0);
-    HMCCostBitW = params.find_integer("HMCCost_BitW", 0);
+    HMCCostLogicalOps = params.find("HMCCost_LogicalOps", 0);
+    HMCCostCASOps = params.find("HMCCost_CASOps", 0);
+    HMCCostCompOps = params.find("HMCCost_CompOps", 0);
+    HMCCostAdd8 = params.find("HMCCost_Add8", 0);
+    HMCCostAdd16 = params.find("HMCCost_Add16", 0);
+    HMCCostAddDual = params.find("HMCCost_AddDual", 0);
+    HMCCostFPAdd = params.find("HMCCost_FPAdd", 0);
+    HMCCostSwap = params.find("HMCCost_Swap", 0);
+    HMCCostBitW = params.find("HMCCost_BitW", 0);
 
     // DRAMSim2 Initialization
     string deviceIniFilename = params.find_string("device_ini", NO_STRING_DEFINED);
@@ -59,11 +59,11 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     string pwd = params.find_string("pwd", ".");
     string logFilename = params.find_string("logfile", "log");
 
-    unsigned int ramSize = (unsigned int)params.find_integer("mem_size", 0);
+    unsigned int ramSize = (unsigned int)params.find("mem_size", 0);
     if (0 == ramSize)
         dbg.fatal(CALL_INFO, -1, "DRAMSim mem_size parameter set to zero. Not allowed, must be power of two in megs.\n");
 
-    id = params.find_integer("id", -1);
+    id = params.find("id", -1);
     string idStr = std::to_string(id);
     string traceFilename = "VAULT_" + idStr + "_EPOCHS";
 
@@ -80,11 +80,11 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     memorySystem->RegisterCallbacks(readDataCB, writeDataCB, NULL);
 
     // DramSim Update frequency (Rough way of managing internal BW)
-    DRAMSimUpdatePerWindow = params.find_integer("DRAMSim_UpdatePerWindow", 1);
+    DRAMSimUpdatePerWindow = params.find("DRAMSim_UpdatePerWindow", 1);
     if (0 >= DRAMSimUpdatePerWindow)
         dbg.fatal(CALL_INFO, -1, "DRAMSim_UpdatePerWindow not defined well\n");
 
-    DRAMSimUpdateWindowSize = params.find_integer("DRAMSim_UpdateWindowSize", 1);
+    DRAMSimUpdateWindowSize = params.find("DRAMSim_UpdateWindowSize", 1);
     if (0 >= DRAMSimUpdateWindowSize)
         dbg.fatal(CALL_INFO, -1, "DRAMSim_UpdateWindowSize not defined well\n");
 
@@ -93,11 +93,11 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     currentDRAMSimUpdateWindowNum = DRAMSimUpdateWindowSize;
 
     // request limit
-    onFlyHMCOpsLimitPerWindow = params.find_integer("onFlyHmcOps_LimitPerWindow", 8);
+    onFlyHMCOpsLimitPerWindow = params.find("onFlyHmcOps_LimitPerWindow", 8);
     if (0 >= onFlyHMCOpsLimitPerWindow)
         dbg.fatal(CALL_INFO, -1, "onFlyHmcOps_LimitPerWindow not defined well\n");
 
-    onFlyHMCOpsLimitWindowSize = params.find_integer("onFlyHmcOps_LimitWindowSize", 1);
+    onFlyHMCOpsLimitWindowSize = params.find("onFlyHmcOps_LimitWindowSize", 1);
     if (0 >= onFlyHMCOpsLimitWindowSize)
         dbg.fatal(CALL_INFO, -1, "onFlyHmcOps_LimitWindowSize not defined well\n");
 
@@ -109,7 +109,7 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     // Atomics Banks Mapping
     numDramBanksPerRank = 1;
     #ifdef USE_VAULTSIM_HMC
-        numDramBanksPerRank = params.find_integer("num_dram_banks_per_rank", 1);
+        numDramBanksPerRank = params.find("num_dram_banks_per_rank", 1);
         dbg.output(CALL_INFO, "Vault%u: numDramBanksPerRank %d\n", id, numDramBanksPerRank);
         if (numDramBanksPerRank < 0)
             dbg.fatal(CALL_INFO, -1, "numDramBanksPerRank should be bigger than 0.\n");
