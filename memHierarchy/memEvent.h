@@ -13,7 +13,6 @@
 #define MEMHIERARHCY_MEMEVENT_H
 
 #include <sst/core/sst_types.h>
-#include <sst/core/serialization.h>
 #include <sst/core/component.h>
 #include <sst/core/event.h>
 #include "sst/core/element.h"
@@ -83,8 +82,8 @@ static const ElementInfoStatistic networkMemoryInspector_statistics[] = {
 #undef X_TYPES
 
 
-/* Coherence states 
- * Not all protocols use all states 
+/* Coherence states
+ * Not all protocols use all states
  */
 #define STATE_TYPES \
     X(NP)    /* Invalid */\
@@ -141,7 +140,7 @@ static const std::string NONE = "None";
  * The command list includes the needed commands to execute cache coherence protocols
  * as well as standard reads and writes to memory.
  */
-class MemEvent : public SST::Event {
+class MemEvent : public SST::Event  {
 public:
     static const uint32_t F_LOCKED        = 0x00000001;  /* Used in a Read-Lock, Write-Unlock atomicity scheme */
     static const uint32_t F_NONCACHEABLE  = 0x00000010;  /* Used to specify that this memory event should not be cached */
@@ -189,6 +188,7 @@ public:
         me->prefetch_     = prefetch_;
         me->instPtr_      = instPtr_;
         me->vAddr_        = vAddr_;
+        me->memFlags_     = memFlags_;
         return me;
     }
 
@@ -239,6 +239,7 @@ public:
         rqstr_              = NONE;
         size_               = 0;
         flags_              = 0;
+        memFlags_           = 0;
         groupID_            = 0;
         prefetch_           = false;
         atomic_             = false;
@@ -294,49 +295,49 @@ public:
     uint32_t getSize(void) const { return size_; }
     /** Sets the size in bytes that this MemEvent represents */
     void setSize(uint32_t size) { size_ = size; }
-   
+
     /** Increments the number of retries */
     void incrementRetries() { retries_++; }
     int getRetries() { return retries_; }
 
     bool blocked() { return blocked_; }
     void setBlocked(bool value) { blocked_ = value; }
-    
+
     bool inProgress() { return inProgress_; }
     void setInProgress(bool value) { inProgress_ = value; }
 
     void setLoadLink() { loadLink_ = true; }
     bool isLoadLink() { return loadLink_; }
-    
+
     void setStoreConditional() { storeConditional_ = true;}
     bool isStoreConditional() { return storeConditional_; }
-    
+
     void setAtomic(bool b) { b ? setFlag(MemEvent::F_LLSC) : clearFlag(MemEvent::F_LLSC); }
     bool isAtomic() { return queryFlag(MemEvent::F_LLSC); }
-    
+
     bool isHighNetEvent() {
         if (cmd_ == GetS || cmd_ == GetX || cmd_ == GetSEx || isWriteback()) {
             return true;
         }
         return false;
     }
-    
+
    bool isLowNetEvent() {
         if (cmd_ == Inv || cmd_ == FetchInv || cmd_ == FetchInvX || cmd_ == Fetch) {
             return true;
         }
         return false;
     }
-    
+
     bool isWriteback() {
         if (cmd_ == PutS || cmd_ == PutM ||
            cmd_ == PutE || cmd_ == PutX || cmd_ == PutXE) {
             return true;
         }
         return false;
-    
+
     }
-    
+
     bool fromHighNetNACK() { return isLowNetEvent();}
     bool fromLowNetNACK() { return isHighNetEvent();}
 
@@ -346,7 +347,7 @@ public:
         if ( payload_.size() < size_ )  payload_.resize(size_);
         return payload_;
     }
-    
+
 
     /** Sets the data payload and payload size.
      * @param[in] data  Vector from which to copy data
@@ -355,7 +356,7 @@ public:
         setSize(data.size());
         payload_ = data;
     }
-    
+
     /** Sets the data payload and payload size.
      * @param[in] size  How many bytes to copy from data
      * @param[in] data  Data array to set as payload
@@ -381,7 +382,7 @@ public:
     void setPrefetchFlag(bool prefetch) { prefetch_ = prefetch;}
     /** Returns true if this is a prefetch command */
     bool isPrefetch() { return prefetch_; }
-    
+
     /** Returns true if this is a Data Request */
     static bool isDataRequest(Command cmd) { return (cmd == GetS || cmd == GetX || cmd == GetSEx || cmd == FetchInv || cmd == FetchInvX || cmd == Fetch); }
     bool isDataRequest(void) const { return MemEvent::isDataRequest(cmd_); }
@@ -394,14 +395,14 @@ public:
     /** Returns true if this is a 'writeback' command type */
     static bool isWriteback(Command cmd) { return (cmd == PutM || cmd == PutE || cmd == PutX || cmd == PutXE || cmd == PutS); }
     bool isWriteback(void) const { return MemEvent::isWriteback(cmd_); }
-   
 
-    
+
+
     /** Setter for GroupId */
     void setGroupId(uint32_t groupID) { groupID_ = groupID; }
     /** Getter for GroupId */
     uint32_t getGroupId() { return groupID_; }
-    
+
     void setDirty(bool status) { dirty_ = status; }
     bool getDirty() { return dirty_; }
 
@@ -439,9 +440,12 @@ public:
     /** Sets the entire flag state */
     void setFlags(uint32_t flags) { flags_ = flags; }
 
+    void setMemFlags(uint32_t flags) { memFlags_ = flags; }
+    uint32_t getMemFlags() { return memFlags_; }
+
     /** Return the BaseAddr */
     Addr getBaseAddr() { return baseAddr_; }
-    
+
     /** Return the command that is the Response to the input command */
     static Command commandResponse(Command cmd) {
         switch(cmd) {
@@ -452,7 +456,7 @@ public:
                 return GetXResp;
             case FetchInv:
             case Fetch:
-                return FetchResp;
+                    return FetchResp;
             case FetchInvX:
                 return FetchXResp;
             default:
@@ -460,25 +464,11 @@ public:
         }
     }
 
-#ifdef USE_VAULTSIM_HMC
-    /** Setter for HMC instruction type */
-    void setHMCInstType(uint8_t hmcInstType) { hmcInstType_ = hmcInstType; }
-    /** Getter for HMC instruction type */
-    uint8_t getHMCInstType() { return hmcInstType_; }
-    /** Setter of HMC Transaction ID */
-    void setHMCTransId(uint64_t _hmcTransId) { hmcTransId_ = _hmcTransId; }
-    /** Getter of HMC Transaction ID */
-    uint64_t getHMCTransId() { return hmcTransId_; }
-
-private:
-    uint8_t         hmcInstType_;
-    uint64_t        hmcTransId_;
-#endif
-
 private:
     id_type         eventID_;           // Unique ID for this event
     id_type         responseToID_;      // For responses, holds the ID to which this event matches
     uint32_t        flags_;             // Any flags (atomic, noncacheabel, etc.)
+    uint32_t        memFlags_;          // Memory flags - ignored by caches except to be copied through. Faciliates processor-memory communication
     uint32_t        size_;              // Size in bytes that are being requested
     uint32_t        groupID_;           // ???
     Addr            addr_;              // Address
@@ -504,42 +494,38 @@ private:
 
     MemEvent() {} // For serialization only
 
-    friend class boost::serialization::access;
-    template<class Archive>
-    void
-    serialize(Archive & ar, const unsigned int version )
-    {
-        ar & BOOST_SERIALIZATION_BASE_OBJECT_NVP(Event);
-        ar & BOOST_SERIALIZATION_NVP(eventID_);
-        ar & BOOST_SERIALIZATION_NVP(responseToID_);
-        ar & BOOST_SERIALIZATION_NVP(flags_);
-        ar & BOOST_SERIALIZATION_NVP(size_);
-        ar & BOOST_SERIALIZATION_NVP(groupID_);
-        ar & BOOST_SERIALIZATION_NVP(addr_);
-        ar & BOOST_SERIALIZATION_NVP(baseAddr_);
-        ar & BOOST_SERIALIZATION_NVP(src_);
-        ar & BOOST_SERIALIZATION_NVP(dst_);
-        ar & BOOST_SERIALIZATION_NVP(rqstr_);
-        ar & BOOST_SERIALIZATION_NVP(cmd_);
-        ar & BOOST_SERIALIZATION_NVP(NACKedEvent_);
-        ar & BOOST_SERIALIZATION_NVP(retries_);
-        ar & BOOST_SERIALIZATION_NVP(payload_);
-        ar & BOOST_SERIALIZATION_NVP(grantedState_);
-        ar & BOOST_SERIALIZATION_NVP(prefetch_);
-        ar & BOOST_SERIALIZATION_NVP(atomic_);
-        ar & BOOST_SERIALIZATION_NVP(loadLink_);
-        ar & BOOST_SERIALIZATION_NVP(storeConditional_);
-        ar & BOOST_SERIALIZATION_NVP(blocked_);
-        ar & BOOST_SERIALIZATION_NVP(initTime_);
-        ar & BOOST_SERIALIZATION_NVP(dirty_);
-        ar & BOOST_SERIALIZATION_NVP(instPtr_);
-        ar & BOOST_SERIALIZATION_NVP(vAddr_);
-        ar & BOOST_SERIALIZATION_NVP(inProgress_);
-#ifdef USE_VAULTSIM_HMC
-        ar & BOOST_SERIALIZATION_NVP(hmcInstType_);
-        ar & BOOST_SERIALIZATION_NVP(hmcTransId_);
-#endif
+public:
+    void serialize_order(SST::Core::Serialization::serializer &ser) {
+        Event::serialize_order(ser);
+        ser & eventID_;
+        ser & responseToID_;
+        ser & flags_;
+        ser & memFlags_;
+        ser & size_;
+        ser & groupID_;
+        ser & addr_;
+        ser & baseAddr_;
+        ser & src_;
+        ser & dst_;
+        ser & rqstr_;
+        ser & cmd_;
+        ser & NACKedEvent_;
+        ser & retries_;
+        ser & payload_;
+        ser & grantedState_;
+        ser & prefetch_;
+        ser & atomic_;
+        ser & loadLink_;
+        ser & storeConditional_;
+        ser & blocked_;
+        ser & initTime_;
+        ser & dirty_;
+        ser & instPtr_;
+        ser & vAddr_;
+        ser & inProgress_;
     }
+
+    ImplementSerializable(SST::MemHierarchy::MemEvent);
 };
 
 }}

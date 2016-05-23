@@ -29,24 +29,29 @@ Sieve* Sieve::sieveFactory(ComponentId_t id, Params &params) {
  
     /* --------------- Output Class --------------- */
     Output* output = new Output();
-    int debugLevel = params.find_integer("debug_level", 0);
+    int debugLevel = params.find<int>("debug_level", 0);
     
-    output->init("--->  ", debugLevel, 0,(Output::output_location_t)params.find_integer("debug", 0));
+    output->init("--->  ", debugLevel, 0,(Output::output_location_t)params.find<int>("debug", 0));
     if(debugLevel < 0 || debugLevel > 10)     output->fatal(CALL_INFO, -1, "Debugging level must be between 0 and 10. \n");
     output->debug(_INFO_,"\n--------------------------- Initializing [Memory Hierarchy] --------------------------- \n\n");
 
     /* --------------- Get Parameters --------------- */
     // LRU - default replacement policy
-    int associativity           = params.find_integer("associativity", -1);
-    string sizeStr              = params.find_string("cache_size", "");                  //Bytes
-    int lineSize                = params.find_integer("cache_line_size", -1);            //Bytes
+    int associativity           = params.find<int>("associativity", -1);
+    string sizeStr              = params.find<std::string>("cache_size", "");                  //Bytes
+    int lineSize                = params.find<int>("cache_line_size", -1);            //Bytes
 
     /* Check user specified all required fields */
     if(-1 >= associativity)         output->fatal(CALL_INFO, -1, "Param not specified: associativity\n");
     if(sizeStr.empty())             output->fatal(CALL_INFO, -1, "Param not specified: cache_size\n");
     if(-1 == lineSize)              output->fatal(CALL_INFO, -1, "Param not specified: cache_line_size - number of bytes in a cacheline (block size)\n");
     
-    long cacheSize = SST::MemHierarchy::convertToBytes(sizeStr);
+    fixByteUnits(sizeStr);
+    UnitAlgebra ua(sizeStr);
+    if (!ua.hasUnits("B")) {
+        output->fatal(CALL_INFO, -1, "Invalid param: cache_size - must have units of bytes (e.g., B, KB,etc.)\n");
+    }
+    uint64_t cacheSize = ua.getRoundedValue();
     uint numLines = cacheSize/lineSize;
 
     /* ---------------- Initialization ----------------- */
@@ -59,35 +64,21 @@ Sieve* Sieve::sieveFactory(ComponentId_t id, Params &params) {
 
 
 
-Sieve::Sieve(ComponentId_t id, Params &params, CacheArray * cacheArray, Output * output) : Component(id), unassociatedMisses(0) {
+Sieve::Sieve(ComponentId_t id, Params &params, CacheArray * cacheArray, Output * output) : Component(id) {
     cacheArray_ = cacheArray;
     output_ = output;
     output_->debug(_INFO_,"--------------------------- Initializing [Sieve]: %s... \n", this->Component::getName().c_str());
 
     /* file output */ 
-    string outFileName  = params.find_string("output_file");
+    outFileName  = params.find<std::string>("output_file");
     if (outFileName.empty()) {
-      outFileName = "sieveMallocRank.txt";
+      outFileName = "sieveMallocRank";
     }
-    output_file = new Output("",0,0,SST::Output::FILE,outFileName);
+    outCount = 0;
     
-    /* --------------- Sieve profiler - implemented as a cassini prefetcher subcomponent ---------------*/
-    string listener   = params.find_string("profiler");
-    if (listener.empty()) {
-	  Params emptyParams;
-	  listener_ = new CacheListener(this, emptyParams);
-    } else {
-      if (listener != std::string("cassini.AddrHistogrammer")) {
-          output_->fatal(CALL_INFO, -1, "%s, Sieve does not support prefetching. It can only support "
-              "profiling through Cassini's AddrHistogrammer.",
-              getName().c_str());
-      }
-	  Params listenerParams = params.find_prefix_params("profiler." );
-	  listener_ = dynamic_cast<CacheListener*>(loadSubComponent(listener, this, listenerParams));
-    }
-    
+    resetStatsOnOutput = params.find<bool>("reset_stats_at_buoy", 0) != 0;
+
     // optional link for allocation / free tracking
-    alloc_link = configureLink("alloc_link", "50ps", new Event::Handler<Sieve>(this, &Sieve::processAllocEvent));
     configureLinks();
 
     /* Register statistics */
@@ -95,24 +86,35 @@ Sieve::Sieve(ComponentId_t id, Params &params, CacheArray * cacheArray, Output *
     statReadMisses  = registerStatistic<uint64_t>("ReadMisses");
     statWriteHits   = registerStatistic<uint64_t>("WriteHits");
     statWriteMisses = registerStatistic<uint64_t>("WriteMisses");
-
+    statUnassocReadMisses   = registerStatistic<uint64_t>("UnassociatedReadMisses");
+    statUnassocWriteMisses  = registerStatistic<uint64_t>("UnassociatedWriteMisses");
 }
 
 void Sieve::configureLinks() {
     SST::Link* link;
     cpuLinkCount_ = 0;
-    for ( int i = 0 ; i < 200 ; i++ ) { // 200 is chosen to be reasonably large but no reason it can't be larger
+    while (true) {
         std::ostringstream linkName;
-        linkName << "cpu_link_" << i;
+        linkName << "cpu_link_" << cpuLinkCount_;
         std::string ln = linkName.str();
         link = configureLink(ln, "100 ps", new Event::Handler<Sieve>(this, &Sieve::processEvent));
         if (link) {
             cpuLinks_.push_back(link);
+            output_->output(CALL_INFO, "Port %lu = Link %d\n", cpuLinks_[cpuLinkCount_]->getId(), cpuLinkCount_);
             cpuLinkCount_++;
-            output_->output(CALL_INFO, "Port %lu = Link %d\n", cpuLinks_[i]->getId(), i);
+        } else {
+            break;
         }
     }
     if (cpuLinkCount_ < 1) output_->fatal(CALL_INFO, -1,"Did not find any connected links on ports cpu_link_n\n");
+
+    allocLinks_.resize(cpuLinkCount_);
+    for (int i = 0; i < cpuLinkCount_; i++) {
+        std::ostringstream linkName;
+        linkName << "alloc_link_" << i;
+        std::string ln = linkName.str();
+        allocLinks_[i] = configureLink(ln, "50ps", new Event::Handler<Sieve>(this, &Sieve::processAllocEvent));
+    }
 }
 
     }}

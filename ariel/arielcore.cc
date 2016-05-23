@@ -63,7 +63,7 @@ ArielCore::ArielCore(ArielTunnel *tunnel, SimpleMem* coreToCacheLink,
 
 	free(subID);
 
-	std::string traceGenName = params.find_string("tracegen", "");
+	std::string traceGenName = params.find<std::string>("tracegen", "");
 	enableTracing = ("" != traceGenName);
 
 	// If we enabled tracing then open up the correct file.
@@ -267,6 +267,19 @@ bool ArielCore::refillQueue() {
 
         // There is data on the pipe
         switch(ac.command) {
+        case ARIEL_OUTPUT_STATS:
+            fprintf(stdout, "Performing statistics output at simulation time = %" PRIu64 "\n", owner->getCurrentSimTimeNano());
+            Simulation::getSimulation()->getStatisticsProcessingEngine()->performGlobalStatisticOutput();
+            if (allocLink) {
+                // tell the allocate montior to dump stats. We
+                // optionally pass a marker number back in the instruction field
+                arielAllocTrackEvent *e 
+                    = new arielAllocTrackEvent(arielAllocTrackEvent::BUOY,
+                                               0, 0, 0, ac.instPtr);
+                allocLink->send(e);
+            }
+            break;
+
         case ARIEL_START_INSTRUCTION:
 	    if(ARIEL_INST_SP_FP == ac.inst.instClass) {
 		statFPSPIns->addData(1);
@@ -333,11 +346,6 @@ bool ArielCore::refillQueue() {
 
         case ARIEL_SWITCH_POOL:
             createSwitchPoolEvent(ac.switchPool.pool);
-            break;
-
-        case ARIEL_OUTPUT_STATS:
-            fprintf(stdout, "Performing statistics output at simulation time = %" PRIu64 "\n", owner->getCurrentSimTimeNano());
-            Simulation::getSimulation()->getStatisticsProcessingEngine()->performGlobalStatisticOutput();
             break;
 
         case ARIEL_PERFORM_EXIT:
@@ -508,10 +516,11 @@ void ArielCore::handleWriteRequest(ArielWriteEvent* wEv) {
 }
 
 void ArielCore::handleAllocationEvent(ArielAllocateEvent* aEv) {
-	output->verbose(CALL_INFO, 2, 0, "Handling a memory allocation event, vAddr=%" PRIu64 ", length=%" PRIu64 ", at level=%" PRIu32 " from ip=%" PRIx64 "\n",
+	output->verbose(CALL_INFO, 2, 0, "Handling a memory allocation event, vAddr=%" PRIu64 ", length=%" PRIu64 ", at level=%" PRIu32 " with malloc ID=%" PRIu64 "\n",
                         aEv->getVirtualAddress(), aEv->getAllocationLength(), aEv->getAllocationLevel(), aEv->getInstructionPointer());
 
-	memmgr->allocate(aEv->getAllocationLength(), aEv->getAllocationLevel(), aEv->getVirtualAddress());
+	// Remove because we can rely on on-demand page allocation
+	// memmgr->allocate(aEv->getAllocationLength(), aEv->getAllocationLevel(), aEv->getVirtualAddress());
 
         if (allocLink) {
 	  output->verbose(CALL_INFO, 2, 0, " Sending memory allocation event to allocate monitor\n");
@@ -656,3 +665,4 @@ void ArielCore::tick() {
 		currentCycles++;
 	}
 }
+

@@ -9,7 +9,6 @@
 // information, see the LICENSE file in the top level directory of the
 // distribution.
 #include <sst_config.h>
-#include "sst/core/serialization.h"
 
 #include <stdlib.h>
 
@@ -24,7 +23,7 @@ using namespace SST::Merlin;
 topo_singlerouter::topo_singlerouter(Component* comp, Params& params) :
     Topology()
 {
-    num_ports = params.find_integer("num_ports");
+    num_ports = params.find<int>("num_ports");
 }
 
 topo_singlerouter::~topo_singlerouter()

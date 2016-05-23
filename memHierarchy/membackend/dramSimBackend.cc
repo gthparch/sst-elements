@@ -17,15 +17,15 @@ using namespace SST;
 using namespace SST::MemHierarchy;
 
 DRAMSimMemory::DRAMSimMemory(Component *comp, Params &params) : MemBackend(comp, params){
-    std::string deviceIniFilename = params.find_string("device_ini", NO_STRING_DEFINED);
+    std::string deviceIniFilename = params.find<std::string>("device_ini", NO_STRING_DEFINED);
     if(NO_STRING_DEFINED == deviceIniFilename)
         ctrl->dbg.fatal(CALL_INFO, -1, "Model must define a 'device_ini' file parameter\n");
-    std::string systemIniFilename = params.find_string("system_ini", NO_STRING_DEFINED);
+    std::string systemIniFilename = params.find<std::string>("system_ini", NO_STRING_DEFINED);
     if(NO_STRING_DEFINED == systemIniFilename)
         ctrl->dbg.fatal(CALL_INFO, -1, "Model must define a 'system_ini' file parameter\n");
 
 
-    unsigned int ramSize = (unsigned int)params.find_integer("mem_size", 0);
+    unsigned int ramSize = params.find<unsigned int>("mem_size", 0);
     if(0 == ramSize) {
 	ctrl->dbg.fatal(CALL_INFO, -1, "DRAMSim backend.mem_size parameter set to zero. Not allowed, must be power of two.\n");
     }
@@ -52,7 +52,9 @@ bool DRAMSimMemory::issueRequest(DRAMReq *req){
     if(!ok) return false;
     ok = memSystem->addTransaction(req->isWrite_, addr);
     if(!ok) return false;  // This *SHOULD* always be ok
+#ifdef __SST_DEBUG_OUTPUT__
     ctrl->dbg.debug(_L10_, "Issued transaction for address %" PRIx64 "\n", (Addr)addr);
+#endif
     dramReqs[addr].push_back(req);
     return true;
 }
@@ -73,7 +75,9 @@ void DRAMSimMemory::finish(){
 
 void DRAMSimMemory::dramSimDone(unsigned int id, uint64_t addr, uint64_t clockcycle){
     std::deque<DRAMReq *> &reqs = dramReqs[addr];
+#ifdef __SST_DEBUG_OUTPUT__
     ctrl->dbg.debug(_L10_, "Memory Request for %" PRIx64 " Finished [%zu reqs]\n", (Addr)addr, reqs.size());
+#endif
     assert(reqs.size());
     DRAMReq *req = reqs.front();
     reqs.pop_front();
