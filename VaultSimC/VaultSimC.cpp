@@ -26,19 +26,19 @@ VaultSimC::VaultSimC(ComponentId_t id, Params& params) : IntrospectedComponent( 
 {
     out.init("", 0, 0, Output::STDOUT);
 
-    int debugLevel = params.find_integer("debug_level", 0);
+    int debugLevel = params.find<int>("debug_level", 0);
     if (debugLevel < 0 || debugLevel > 10)
         dbg.fatal(CALL_INFO, -1, "Debugging level must be between 0 and 10. \n");
-    dbg.init("@R:VaultSim::@p():@l " + getName() + ": ", debugLevel, 0, (Output::output_location_t)params.find_integer("debug", 0));
+    dbg.init("@R:VaultSim::@p():@l " + getName() + ": ", debugLevel, 0, (Output::output_location_t)(int)params.find<bool>("debug", 0));
 
-    statsFormat = params.find_integer("statistics_format", 0);
+    statsFormat = params.find<int>("statistics_format", 0);
 
     std::string frequency = "1.0 GHz";
-    frequency = params.find_string("clock", "1.0 Ghz");
+    frequency = params.find<string>("clock", "1.0 Ghz");
 
     memChan = configureLink("bus", "1ps");     //link delay is configurable by python scripts
 
-    int vid = params.find_integer("vault.id", -1);
+    int vid = params.find<int>("vault.id", -1);
     if (-1 == vid)
         dbg.fatal(CALL_INFO, -1, "vault.id not set\n");
     vaultID = vid;
@@ -58,10 +58,10 @@ VaultSimC::VaultSimC(ComponentId_t id, Params& params) : IntrospectedComponent( 
     memorySystem->registerCallback(readDataCB, writeDataCB);
     dbg.output(CALL_INFO, "VaultSimC %u: made vault %u\n", vaultID, vaultID);
 
-    CacheLineSize = params.find_integer("cacheLineSize", 64);
+    CacheLineSize = params.find<uint64_t>("cacheLineSize", 64);
 
     // Address sent to DRAMSim
-    numBitShiftAddressDRAM = params.find_integer("num_bit_shift_address_dram", 0);
+    numBitShiftAddressDRAM = params.find<int>("num_bit_shift_address_dram", 0);
     dbg.debug(_WARNING_, "*VaultSim%u: Number of bits shift for address that is sent to DRAMSim is %d. "\
         "Consider vaultID/quadID bit locations\n", vaultID, numBitShiftAddressDRAM);
 }
@@ -152,7 +152,7 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         transaction_c transaction (isWrite, new_addr & ~((uint64_t)CacheLineSize-1));
 
         #ifdef USE_VAULTSIM_HMC
-        uint8_t HMCTypeEvent = event->getHMCInstType();
+        uint32_t HMCTypeEvent = event->getMemFlags();
         transaction.setHmcOpType(HMCTypeEvent);
         if (HMCTypeEvent == HMC_NONE || HMCTypeEvent == HMC_CANDIDATE) {
             transaction.resetAtomic();

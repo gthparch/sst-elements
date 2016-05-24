@@ -1,10 +1,10 @@
 // Copyright 2009-2015 Sandia Corporation. Under the terms
 // of Contract DE-AC04-94AL85000 with Sandia Corporation, the U.S.
 // Government retains certain rights in this software.
-// 
+//
 // Copyright (c) 2009-2015, Sandia Corporation
 // All rights reserved.
-// 
+//
 // This file is part of the SST software package. For license
 // information, see the LICENSE file in the top level directory of the
 // distribution.
@@ -20,38 +20,38 @@
 using namespace SST::Interfaces;
 using namespace SST::MemHierarchy;
 
-quad::quad(ComponentId_t id, Params& params) : IntrospectedComponent( id ) 
+quad::quad(ComponentId_t id, Params& params) : IntrospectedComponent( id )
 {
     // Debug and Output Initialization
     out.init("", 0, 0, Output::STDOUT);
 
-    int debugLevel = params.find_integer("debug_level", 0);
-    dbg.init("@R:Quad::@p():@l " + getName() + ": ", debugLevel, 0, (Output::output_location_t)params.find_integer("debug", 0));
-    if(debugLevel < 0 || debugLevel > 10) 
+    int debugLevel = params.find<int>("debug_level", 0);
+    dbg.init("@R:Quad::@p():@l " + getName() + ": ", debugLevel, 0, (Output::output_location_t)(int)params.find<bool>("debug", 0));
+    if(debugLevel < 0 || debugLevel > 10)
         dbg.fatal(CALL_INFO, -1, "Debugging level must be between 0 and 10. \n");
 
     // quad Params Initialization
-    int ident = params.find_integer("quadID", -1);
+    int ident = params.find<int>("quadID", -1);
     if (-1 == ident)
         dbg.fatal(CALL_INFO, -1, "quadID not defined\n");
     quadID = ident;
 
-    numVaultPerQuad = params.find_integer("num_vault_per_quad", 4);
+    numVaultPerQuad = params.find<int>("num_vault_per_quad", 4);
     numVaultPerQuad2 = log(numVaultPerQuad) / log(2);
-    
-    CacheLineSize = params.find_integer("cacheLineSize", 64);
+
+    CacheLineSize = params.find<uint64_t>("cacheLineSize", 64);
     CacheLineSizeLog2 = log(CacheLineSize) / log(2);
 
-    numTotalVaults = params.find_integer("num_all_vaults", -1);
+    numTotalVaults = params.find<int>("num_all_vaults", -1);
     numTotalVaults2 = log(numTotalVaults) / log(2);
-    if (-1 == numTotalVaults) 
+    if (-1 == numTotalVaults)
         dbg.fatal(CALL_INFO, -1, "num_all_vaults not defined\n");
 
-    statsFormat = params.find_integer("statistics_format", 0);
+    statsFormat = params.find<int>("statistics_format", 0);
 
     // clock
     std::string frequency;
-    frequency = params.find_string("clock", "2.0 Ghz");
+    frequency = params.find<string>("clock", "2.0 Ghz");
     registerClock(frequency, new Clock::Handler<quad>(this, &quad::clock));
     dbg.debug(_INFO_, "Making quad with id=%d & clock=%s\n", quadID, frequency.c_str());
 
@@ -109,10 +109,10 @@ bool quad::clock(Cycle_t currentCycle) {
 
         // if event Quad ID matches Quad ID send it
         if (evQuadID == quadID) {
-            dbg.debug(_L5_, "Quad%d %p with quadID %u matches quad ID @ %" PRIu64 "\n", quadID, (void*)event->getAddr(), evQuadID, currentCycle); 
+            dbg.debug(_L5_, "Quad%d %p with quadID %u matches quad ID @ %" PRIu64 "\n", quadID, (void*)event->getAddr(), evQuadID, currentCycle);
             unsigned int sendID = (event->getAddr() >>  sendAddressShift) & sendAddressMask;
             outChans[sendID]->send(event);
-            dbg.debug(_L5_, "Quad%d sends %p to vault%u(%u) @ %" PRIu64 "\n", quadID, (void*)event->getAddr(), sendID+(quadID*numVaultPerQuad), sendID, currentCycle); 
+            dbg.debug(_L5_, "Quad%d sends %p to vault%u(%u) @ %" PRIu64 "\n", quadID, (void*)event->getAddr(), sendID+(quadID*numVaultPerQuad), sendID, currentCycle);
         }
 
         // event Quad ID not matching Quad ID, send it to Xbar
@@ -134,11 +134,11 @@ bool quad::clock(Cycle_t currentCycle) {
             dbg.debug(_L5_, "Quad%d got event %p from vault %u @%" PRIu64 ", sent towards cpu\n", quadID, (void*)event->getAddr(), j, currentCycle);
             toLogicLayer->send(event);
             statTotalTransactionsRecvFromVaults->addData(1);
-        }    
+        }
     }
 }
 
-void quad::finish() 
+void quad::finish()
 {
     dbg.debug(_INFO_, "Quad%d completed\n", quadID);
     //Print Statistics
@@ -151,7 +151,7 @@ void quad::finish()
  * libVaultSimGen Functions
  */
 
-extern "C" Component* create_quad( SST::ComponentId_t id,  SST::Params& params ) 
+extern "C" Component* create_quad( SST::ComponentId_t id,  SST::Params& params )
 {
     return new quad( id, params );
 }
@@ -169,13 +169,12 @@ void quad::printStatsForMacSim() {
     stringstream ss;
     ss << suffix.c_str() << ".stat.out";
     string filename = ss.str();
-    
+
     ofstream ofs;
     ofs.exceptions(std::ofstream::eofbit | std::ofstream::failbit | std::ofstream::badbit);
     ofs.open(filename.c_str(), std::ios_base::out);
 
     writeTo(ofs, suffix, string("total_trans_recv"),                 statTotalTransactionsRecv->getCollectionCount());
     writeTo(ofs, suffix, string("trans_sent_to_xbar"),               statTransactionsSentToXbar->getCollectionCount());
-    writeTo(ofs, suffix, string("total_trans_recv_from_vaults"),     statTotalTransactionsRecvFromVaults->getCollectionCount()); 
+    writeTo(ofs, suffix, string("total_trans_recv_from_vaults"),     statTotalTransactionsRecvFromVaults->getCollectionCount());
 }
-
