@@ -1,0 +1,3 @@
+[submodule "macsimComponent"]
+	path = macsimComponent
+	url = https://github.com/gthparch/macsim_devel
