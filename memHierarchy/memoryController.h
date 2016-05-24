@@ -67,7 +67,7 @@ private:
 
         if(0 == numPages_)     return (addr >= rangeStart_ && addr < (rangeStart_ + memSize_));
         if(addr < rangeStart_) return false;
-        
+
         addr = addr - rangeStart_;
         step = addr / interleaveStep_;
         if(step >= numPages_)  return false;
@@ -81,27 +81,27 @@ private:
 
     Addr convertAddressToLocalAddress(Addr addr){
         if (0 == numPages_) return addr - rangeStart_;
-        
+
         addr = addr - rangeStart_;
         Addr step = addr / interleaveStep_;
         Addr offset = addr % interleaveStep_;
         return (step * interleaveSize_) + offset;
     }
-    
+
     void cancelEvent(MemEvent *ev) {}
     void sendBusPacket(Bus::key_t key){}
     void sendBusCancel(Bus::key_t key){}
     void handleBusEvent(SST::Event *event){}
-    
+
     typedef deque<DRAMReq*> dramReq_t;
-    
+
     bool        divertDCLookups_;
-    SST::Link*  cacheLink_;         // Link to the rest of memHierarchy 
+    SST::Link*  cacheLink_;         // Link to the rest of memHierarchy
     MemNIC*     networkLink_;       // Link to the rest of memHierarchy if we're communicating over a network
     MemBackend* backend_;
     int         protocol_;
     dramReq_t   requestQueue_;      // Requests waiting to be issued
-    set<DRAMReq*>   requestPool_;   // All requests that are in flight at the memory controller (including those waiting to be issued) 
+    set<DRAMReq*>   requestPool_;   // All requests that are in flight at the memory controller (including those waiting to be issued)
     int         backingFd_;
     uint8_t*    memBuffer_;
     uint64_t    memSize_;
