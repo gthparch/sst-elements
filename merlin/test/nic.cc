@@ -9,7 +9,6 @@
 // information, see the LICENSE file in the top level directory of the
 // distribution.
 #include <sst_config.h>
-#include "sst/core/serialization.h"
 #include "sst/elements/merlin/test/nic.h"
 
 #include <unistd.h>
@@ -41,33 +40,29 @@ nic::nic(ComponentId_t cid, Params& params) :
     initialized(false),
     output(Simulation::getSimulation()->getSimulationOutput())
 {
-    net_id = params.find_integer("id");
+    net_id = params.find<int>("id",-1);
     if ( net_id == -1 ) {
     }
     // std::cout << "id: " << id << "\n";
     // std::cout << "Nic ID:  " << id << " has Component id " << cid << "\n";
 
-    num_peers = params.find_integer("num_peers");
+    num_peers = params.find<int>("num_peers",-1);
     if ( num_peers == -1 ) {
     }
     // std::cout << "num_peers: " << num_peers << "\n";
 
-    // num_vns = params.find_integer("num_vns");
-    // if ( num_vns == -1 ) {
-    // }
     num_vns = 1;
-    // std::cout << "num_vns: " << num_vns << "\n";
     
-    std::string link_bw_s = params.find_string("link_bw");
+    std::string link_bw_s = params.find<std::string>("link_bw");
     if ( link_bw_s == "" ) {
     }
     // std::cout << "link_bw: " << link_bw_s << std::endl;
     // TimeConverter* tc = Simulation::getSimulation()->getTimeLord()->getTimeConverter(link_bw);
     UnitAlgebra link_bw(link_bw_s);
     
-    num_msg = params.find_integer("num_messages",10);
+    num_msg = params.find<int>("num_messages",10);
 
-    remap = params.find_integer("remap", 0);
+    remap = params.find<int>("remap", 0);
     id = (net_id + remap) % num_peers;
     
     // Create a LinkControl object
@@ -147,6 +142,7 @@ nic::init(unsigned int phase) {
 class MyRtrEvent : public Event {
 public:
     int seq;
+    MyRtrEvent() {}
     MyRtrEvent(int seq) : seq(seq)
     {}
 
@@ -154,20 +150,22 @@ public:
     {
         return new MyRtrEvent(*this);
     }
-private:
-    MyRtrEvent() {}
 
-	friend class boost::serialization::access;
-	template<class Archive>
-	void
-	serialize(Archive & ar, const unsigned int version )
-	{
-		ar & BOOST_SERIALIZATION_BASE_OBJECT_NVP(Event);
-		ar & BOOST_SERIALIZATION_NVP(seq);
+    void serialize_order(SST::Core::Serialization::serializer &ser) {
+        Event::serialize_order(ser);
+        ser & seq;
     }
+
+    virtual void print(const std::string& header, Output &out) const {
+        out.output("%s MyRtrEvent to be delivered at %" PRIu64 " with priority %d.  seq = %d\n",
+                   header.c_str(), getDeliveryTime(), getPriority(), seq);
+    }
+    
+
+private:
+
+    ImplementSerializable(SST::Merlin::MyRtrEvent);
 };
-
-
 
 
 bool
@@ -178,7 +176,7 @@ nic::clock_handler(Cycle_t cycle)
     int expected_recv_count = (num_peers-1)*num_msg;
 
     if ( !done && (packets_recd >= expected_recv_count) ) {
-        output.output("%" PRIu64 ": NIC %d received all packets!\n", cycle, id);
+        output.output("%" PRIu64 ": NIC %d received all packets (total of %d)!\n", cycle, id, expected_recv_count);
         primaryComponentOKToEndSim();
         done = true;
     }
@@ -202,11 +200,11 @@ nic::clock_handler(Cycle_t cycle)
             req->vn = 0;
             req->size_in_bits = size_in_bits;
             req->givePayload(ev);
-            // if ( id == 0 ) {
-                // req->setTraceType(SST::Interfaces::SimpleNetwork::Request::FULL);
-                // req->setTraceID(net_id*1000 + packets_sent);
+            // if ( net_id == 319 && last_target == 320 ) {
+            //     req->setTraceType(SST::Interfaces::SimpleNetwork::Request::FULL);
+            //     req->setTraceID(net_id*1000 + packets_sent);
             // }
-            
+
             bool sent = link_control->send(req,send_vc);
             assert( sent );
             //std::cout << cycle << ": " << id << " sent packet " << ev->seq << " to " << ev->dest << std::endl;
@@ -229,10 +227,14 @@ nic::clock_handler(Cycle_t cycle)
             if ( ev == NULL ) {
                 Simulation::getSimulation()->getSimulationOutput().fatal(CALL_INFO, -1, "Aieeee!\n");
             }
-            // std::cout << id << " received a packet on VN" << last_vn << " from " << req->src << std::endl;
             packets_recd++;
             // int src = net_map[req->src];
             int src = req->src;
+
+            if ( req->dest != net_id ) {
+                output.fatal(CALL_INFO,-1,"%d received packet intended for %d\n",net_id,(int)req->dest);
+            }
+
 #if 0
             if ( next_seq[src] != ev->seq ) {
                 output.output("%d received packet %d from %d Expected sequence number %d\n",
@@ -256,4 +258,3 @@ nic::clock_handler(Cycle_t cycle)
 } // namespace Merlin
 } // namespace SST
 
-BOOST_CLASS_EXPORT(SST::Merlin::MyRtrEvent)

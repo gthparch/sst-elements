@@ -101,6 +101,7 @@ driverParams = ({
 		"sharedTrace" : "allred-128.stf",
 		"printStats" : 1,
 		"buffersize" : 140,
+		"os.name" : "hermesParams",
 		"hermesParams.debug" : 0,
 		"hermesParams.verboseLevel" : 1,
 		"hermesParams.nicModule" : "firefly.VirtNic",
@@ -146,12 +147,11 @@ class EmberEP(EndPoint):
 		return "EmberEP"
 	def prepParams(self):
 		pass
-	def build(self, nodeID, link, extraKeys):
+	def build(self, nodeID, extraKeys):
 		num_vNics = int(nicParams["num_vNics"])
 		nic = sst.Component("nic" + str(nodeID), "firefly.nic")
 		nic.addParams(nicParams)
 		nic.addParam("nid", nodeID)
-		nic.addLink(link, "rtr", "10ns")
 
 		loopBack = sst.Component("loopBack" + str(nodeID), "firefly.loopBack")
 		loopBack.addParam("numCores", num_vNics)
@@ -170,6 +170,7 @@ class EmberEP(EndPoint):
             
 			ep.addLink(loopLink, "loop", "1ns")
 			loopBack.addLink(loopLink, "core" + str(x), "1ns")
+		return (nic, "rtr", "10ns")
 
 
 topo = topoTorus()

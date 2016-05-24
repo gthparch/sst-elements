@@ -12,12 +12,7 @@
 //
 
 #include <sst_config.h>
-#include <sst/core/serialization.h>
 #include "memHierarchyInterface.h"
-
-#ifdef USE_VAULTSIM_HMC    
-#include "simpleMemHMCExtension.h"
-#endif
 
 #include <sst/core/component.h>
 #include <sst/core/link.h>
@@ -60,16 +55,16 @@ SimpleMem::Request* MemHierarchyInterface::recvResponse(void){
 
 MemEvent* MemHierarchyInterface::createMemEvent(SimpleMem::Request *_req) const{
     Command cmd = NULLCMD;
-    
+
     switch ( _req->cmd ) {
         case SimpleMem::Request::Read:      cmd = GetS;     break;
         case SimpleMem::Request::Write:     cmd = GetX;     break;
         case SimpleMem::Request::ReadResp:  cmd = GetXResp; break;
         case SimpleMem::Request::WriteResp: cmd = GetSResp; break;
     }
-    
+
     MemEvent *me = new MemEvent(owner_, _req->addr, _req->addr, cmd);
-    
+
     me->setGroupId(_req->groupId);
     me->setSize(_req->size);
 
@@ -77,13 +72,13 @@ MemEvent* MemHierarchyInterface::createMemEvent(SimpleMem::Request *_req) const{
 
     if(_req->flags & SimpleMem::Request::F_NONCACHEABLE)
         me->setFlag(MemEvent::F_NONCACHEABLE);
-    
+
     if(_req->flags & SimpleMem::Request::F_LOCKED) {
         me->setFlag(MemEvent::F_LOCKED);
         if (_req->cmd == SimpleMem::Request::Read)
             me->setCmd(GetSEx);
     }
-    
+
     if(_req->flags & SimpleMem::Request::F_LLSC){
         if (_req->cmd == SimpleMem::Request::Read)
             me->setLoadLink();
@@ -93,13 +88,7 @@ MemEvent* MemHierarchyInterface::createMemEvent(SimpleMem::Request *_req) const{
 
     me->setVirtualAddress(_req->getVirtualAddress());
     me->setInstructionPointer(_req->getInstructionPointer());
-
-#ifdef USE_VAULTSIM_HMC
-    MacSim::SimpleMemHMCExtension::HMCRequest *hmcReq = 
-        static_cast<MacSim::SimpleMemHMCExtension::HMCRequest *>(_req);
-    me->setHMCInstType(hmcReq->hmcInstType);
-    me->setHMCTransId(hmcReq->hmcTransId);
-#endif
+    me->setMemFlags(_req->memFlags);
 
     //totalRequests_++;
     return me;
@@ -118,7 +107,7 @@ SimpleMem::Request* MemHierarchyInterface::processIncoming(MemEvent *_ev){
     SimpleMem::Request *req = NULL;
     Command cmd = _ev->getCmd();
     MemEvent::id_type origID = _ev->getResponseToID();
-    
+
     BOOST_ASSERT_MSG(MemEvent::isResponse(cmd), "Interal Error: Request Type event (eg GetS, GetX, etc) should not be sent by MemHierarchy to CPU. " \
     "Make sure you L1's cache 'high network port' is connected to the CPU, and the L1's 'low network port' is connected to the next level cache.");
 
@@ -150,8 +139,9 @@ void MemHierarchyInterface::updateRequest(SimpleMem::Request* _req, MemEvent *_m
     default:
         fprintf(stderr, "Don't know how to deal with command %s\n", CommandString[_me->getCmd()]);
     }
-    
-    
+   // Always update memFlags to faciliate mem->processor communication
+    _req->memFlags = _me->getMemFlags();
+
 }
 
 bool MemHierarchyInterface::initialize(const std::string &linkName, HandlerBase *_handler){

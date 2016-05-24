@@ -43,19 +43,19 @@ CacheAction L1CoherenceController::handleEviction(CacheLine* wbCacheLine, string
         case I:
             return DONE;
         case S:
-            sendWriteback(PutS, wbCacheLine, origRqstr);
-            wbCacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(wbCacheLine->getBaseAddr());
+            if (!silentEvictClean_) sendWriteback(PutS, wbCacheLine, origRqstr);
+            if (expectWritebackAck_) mshr_->insertWriteback(wbCacheLine->getBaseAddr());
+            wbCacheLine->setState(I);
             return DONE;
         case E:
-            sendWriteback(PutE, wbCacheLine, origRqstr);
-	    wbCacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(wbCacheLine->getBaseAddr());
+            if (!silentEvictClean_) sendWriteback(PutE, wbCacheLine, origRqstr);
+            if (expectWritebackAck_) mshr_->insertWriteback(wbCacheLine->getBaseAddr());
+	    wbCacheLine->setState(I);
 	    return DONE;
         case M:
 	    sendWriteback(PutM, wbCacheLine, origRqstr);
-            wbCacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(wbCacheLine->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(wbCacheLine->getBaseAddr());
+            wbCacheLine->setState(I);
 	    return DONE;
         case IS:
         case IM:
@@ -187,8 +187,8 @@ bool L1CoherenceController::isRetryNeeded(MemEvent * event, CacheLine * cacheLin
         case PutS:
         case PutE:
         case PutM:
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) 
-                if (!mshr_->pendingWriteback(event->getBaseAddr())) return false;   // The Put was resolved (probably raced with Inv)
+            if (expectWritebackAck_ && !mshr_->pendingWriteback(event->getBaseAddr()))
+                return false;   // The Put was resolved (probably raced with Inv)
             return true;
         default:
             d_->fatal(CALL_INFO, -1, "%s, Error: NACKed event is unrecognized: %s. Addr = 0x%" PRIx64 ", Src = %s. Time = %" PRIu64"ns\n",
@@ -314,6 +314,10 @@ void L1CoherenceController::handleDataResponse(MemEvent* responseEvent, CacheLin
     
     State state = cacheLine->getState();
     recordStateEventCount(responseEvent->getCmd(), state);
+    
+    // Copy memflags through to processor
+    origRequest->setMemFlags(responseEvent->getMemFlags());
+    
     uint64_t sendTime = 0;
     switch (state) {
         case IS:

@@ -1,28 +1,28 @@
 /*
 Copyright (c) <2012>, <Georgia Institute of Technology> All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification, are permitted 
+Redistribution and use in source and binary forms, with or without modification, are permitted
 provided that the following conditions are met:
 
-Redistributions of source code must retain the above copyright notice, this list of conditions 
+Redistributions of source code must retain the above copyright notice, this list of conditions
 and the following disclaimer.
 
-Redistributions in binary form must reproduce the above copyright notice, this list of 
-conditions and the following disclaimer in the documentation and/or other materials provided 
+Redistributions in binary form must reproduce the above copyright notice, this list of
+conditions and the following disclaimer in the documentation and/or other materials provided
 with the distribution.
 
-Neither the name of the <Georgia Institue of Technology> nor the names of its contributors 
-may be used to endorse or promote products derived from this software without specific prior 
+Neither the name of the <Georgia Institue of Technology> nor the names of its contributors
+may be used to endorse or promote products derived from this software without specific prior
 written permission.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR 
-IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY 
-AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR 
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR 
-OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 */
 
@@ -82,30 +82,30 @@ typedef enum HMC_Op_State_enum {
 
 class transaction_c {
 public:
-    /** 
+    /**
      * Constructor
      * @param isWrite is it a write?
      * @param addr address for memory operation
      */
     transaction_c() : isWrite(false), addr(0), isAtomic(false), hmcType(HMC_NONE), transactionId(0), hmcOpState(NO_STATE), flagPrintDbgHMC(0) {}
 
-    transaction_c(bool _isWrite, uint64_t _addr) : 
+    transaction_c(bool _isWrite, uint64_t _addr) :
         isWrite(_isWrite), addr(_addr), isAtomic(false), hmcType(HMC_NONE), transactionId(0), hmcOpState(NO_STATE), flagPrintDbgHMC(0) {}
 
-    /** 
+    /**
      * addr Member Fuctions
      */
     uint64_t getAddr() { return addr; }
     void setAddr( uint64_t addr_) { addr = addr_; }
 
-    /** 
-     * isWrite Member Fuctions     
+    /**
+     * isWrite Member Fuctions
      */
     bool getIsWrite() { return isWrite; }
     void setIsWrite() { isWrite = true; }
     void resetIsWrite() { isWrite = false; }
 
-    /** 
+    /**
      * isAtomic Member Fuctions
      */
     bool getAtomic() { return isAtomic; }
@@ -118,14 +118,14 @@ public:
     void setTransId(uint64_t transactionId_) { transactionId = transactionId_; }
     uint64_t getTransId() { return transactionId; }
 
-    /** 
+    /**
      * HMC_Type functions
      */
-    void setHmcOpType(uint8_t instType) { hmcType = instType; }
-    uint8_t getHmcOpType() { return hmcType; }
+    void setHmcOpType(uint32_t instType) { hmcType = instType; }
+    uint32_t getHmcOpType() { return hmcType; }
     const char* getHmcOpTypeStr() {
         switch (hmcType) {
-        case HMC_NONE:  
+        case HMC_NONE:
             return "HMC_NONE";
         case HMC_CAS_equal_16B:
             return "HMC_CAS_equal_16B";
@@ -181,7 +181,7 @@ public:
             return "NO_STATE";
         case QUEUED:
             return "QUEUED";
-        case READ_ISSUED:  
+        case READ_ISSUED:
             return "READ_ISSUED";
         case READ_ANS_RECV:
             return "READ_ANS_RECV";
@@ -196,9 +196,9 @@ public:
 
     /**
      * BankNo functions
-     */ 
+     */
     void setBankNo (unsigned _bankNo) { bankNo = _bankNo; }
-    unsigned getBankNo () { return bankNo; } 
+    unsigned getBankNo () { return bankNo; }
 
     /**
      * Stats
@@ -213,7 +213,7 @@ private:
     uint64_t addr;
     unsigned int bankNo;
     bool isAtomic;
-    uint8_t hmcType;              //HMC_Type Enum
+    uint32_t hmcType;              //HMC_Type Enum
 
     //Transaction Support
     uint64_t transactionId;
@@ -228,7 +228,7 @@ public:
     uint64_t issueCycle;
     uint64_t readDoneCycle;
     uint64_t writeDoneCycle;
-    
+
 };
 
 #endif

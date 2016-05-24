@@ -10,7 +10,6 @@
 // distribution.
 
 #include <sst_config.h>
-#include "sst/core/serialization.h"
 
 #include <sst/core/element.h>
 #include <sst/core/configGraph.h>
@@ -20,6 +19,7 @@
 #include "merlin.h"
 #include "linkControl.h"
 #include "reorderLinkControl.h"
+#include "bridge.h"
 
 #include "hr_router/hr_router.h"
 #include "test/nic.h"
@@ -43,6 +43,9 @@
 #include "hr_router/xbar_arb_lru_infx.h"
 
 #include "trafficgen/trafficgen.h"
+
+#include "inspectors/circuitCounter.h"
+#include "inspectors/testInspector.h"
 
 #include "pymodule.h"
 
@@ -92,6 +95,7 @@ static const ElementInfoStatistic hr_router_statistics[] = {
     { "send_packet_count", "Count number of packets sent on link", "packets", 1},
     { "output_port_stalls", "Time output port is stalled (in units of core timebase)", "time in stalls", 1},
     { "xbar_stalls", "Count number of cycles the xbar is stalled", "cycles", 1},
+    { "idle_time", "number of nanoseconds that port was idle", "nanoseconds", 1},
     { NULL, NULL, NULL, 0 }
 };
 
@@ -523,35 +527,58 @@ static const ElementInfoStatistic reorderlinkcontrol_statistics[] = {
     { NULL, NULL, NULL, 0 }
 };
 
-
-class TestNetworkInspector : public SimpleNetwork::NetworkInspector {
-private:
-    Statistic<uint64_t>* test_count;
-public:
-    TestNetworkInspector(Component* parent) :
-        SimpleNetwork::NetworkInspector(parent)
-    {}
-
-    void initialize(string id) {
-        test_count = registerStatistic<uint64_t>("test_count", id);
-    }
-
-    void inspectNetworkData(SimpleNetwork::Request* req) {
-        test_count->addData(1);
-    }
-};
-
 static SubComponent*
 load_test_network_inspector(Component* parent, Params& params)
 {
     return new TestNetworkInspector(parent);
 }
 
+static SubComponent*
+load_circ_network_inspector(Component* parent, Params& params)
+{
+    return new CircNetworkInspector(parent, params);
+}
 
 static const ElementInfoStatistic test_network_inspector_statistics[] = {
     { "test_count", "Count number of packets sent on link", "packets", 1},
     { NULL, NULL, NULL, 0 }
 };
+
+
+/* Network Bridge */
+static Component* create_Bridge(ComponentId_t id, Params& params){
+	return new Bridge( id, params );
+}
+
+static const ElementInfoParam bridge_params[] = {
+    {"translator",                "Translator backend.  Inherit from SST::Merlin::Bridge::Translator.", NULL},
+    {"debug",                     "0 (default): No debugging, 1: STDOUT, 2: STDERR, 3: FILE.", "0"},
+    {"debug_level",               "Debugging level: 0 to 10", "0"},
+    {"network_bw",                "The network link bandwidth.", "80GiB/s"},
+    {"network_input_buffer_size", "Size of the network's input buffer.", "1KiB"},
+    {"network_output_buffer_size","Size of the network;s output buffer.", "1KiB"},
+    {NULL, NULL, NULL}
+};
+
+
+static const ElementInfoPort bridge_ports[] = {
+    {"network0",     "Network Link",     NULL},
+    {"network1",     "Network Link",     NULL},
+    {NULL, NULL, NULL}
+};
+
+static const ElementInfoStatistic bridge_statistics[] = {
+    /* Cache hits and misses */
+    {"pkts_received_net0",           "Total number of packets recived on NIC0", "count", 1},
+    {"pkts_received_net1",           "Total number of packets recived on NIC1", "count", 1},
+    {"pkts_sent_net0",           "Total number of packets sent on NIC0", "count", 1},
+    {"pkts_sent_net1",           "Total number of packets sent on NIC1", "count", 1},
+    {NULL, NULL, NULL, 0},
+};
+
+
+
+
 
 static const ElementInfoComponent components[] = {
     { "portals_nic",
@@ -621,6 +648,15 @@ static const ElementInfoComponent components[] = {
       COMPONENT_CATEGORY_NETWORK,
       NULL
     },
+	{   "Bridge",
+	    "Bridge between two Memory Networks",
+	    NULL,
+	    create_Bridge,
+        bridge_params,
+        bridge_ports,
+        COMPONENT_CATEGORY_NETWORK,
+        bridge_statistics,
+	},
     { NULL, NULL, NULL, NULL }
 };
 
@@ -702,6 +738,14 @@ static const ElementInfoSubComponent subcomponents[] = {
       test_network_inspector_statistics,
       "SST::Interfaces::SimpleNetwork::NetworkInspector"
     },
+    { "circuit_network_inspector",
+      "Used to count the number of network circuits (as in 'circuit switched' circuits)", 
+      NULL,
+      load_circ_network_inspector,
+      NULL,
+      NULL,
+      "SST::Interfaces::SimpleNetwork::NetworkInspector"
+      },
     { "xbar_arb_rr",
       "Round robin arbitration unit for hr_router",
       NULL,
@@ -760,10 +804,4 @@ extern "C" {
         NULL // generators,
     };
 }
-
-BOOST_CLASS_EXPORT(SST::Merlin::BaseRtrEvent)
-BOOST_CLASS_EXPORT(SST::Merlin::RtrEvent)
-BOOST_CLASS_EXPORT(SST::Merlin::RtrInitEvent)
-BOOST_CLASS_EXPORT(SST::Merlin::credit_event)
-BOOST_CLASS_EXPORT(SST::Merlin::TopologyEvent)
 

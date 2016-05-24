@@ -18,7 +18,7 @@ using namespace SST;
 using namespace SST::MemHierarchy;
 
 HybridSimMemory::HybridSimMemory(Component *comp, Params &params) : MemBackend(comp, params){
-    std::string hybridIniFilename = params.find_string("system_ini", NO_STRING_DEFINED);
+    std::string hybridIniFilename = params.find<std::string>("system_ini", NO_STRING_DEFINED);
     if(hybridIniFilename == NO_STRING_DEFINED)
         ctrl->dbg.fatal(CALL_INFO, -1, "XML must define a 'system_ini' file parameter\n");
 
@@ -39,7 +39,9 @@ bool HybridSimMemory::issueRequest(DRAMReq *req){
     if(!ok) return false;
     ok = memSystem->addTransaction(req->isWrite_, addr);
     if(!ok) return false;  // This *SHOULD* always be ok
+#ifdef __SST_DEBUG_OUTPUT__
     ctrl->dbg.debug(_L10_, "Issued transaction for address %" PRIx64 "\n", (Addr)addr);
+#endif
     dramReqs[addr].push_back(req);
     return true;
 }
@@ -60,7 +62,9 @@ void HybridSimMemory::finish(){
 
 void HybridSimMemory::hybridSimDone(unsigned int id, uint64_t addr, uint64_t clockcycle){
     std::deque<DRAMReq *> &reqs = dramReqs[addr];
+#ifdef __SST_DEBUG_OUTPUT__
     ctrl->dbg.debug(_L10_, "Memory Request for %" PRIx64 " Finished [%zu reqs]\n", addr, reqs.size());
+#endif
     assert(reqs.size());
     DRAMReq *req = reqs.front();
     reqs.pop_front();

@@ -166,7 +166,7 @@ private:
     void printStatsForMacSim();
 
 public:
-    unsigned id;
+    int id;
     uint64_t currentClockCycle;
 
     callback_t *readCallback;
@@ -182,7 +182,7 @@ private:
     Output dbg;                                  // VaulSimC wrapper dbg, for printing debuging commands
     Output out;                                  // VaulSimC wrapper output, for printing always printed info and stats
     Output dbgOnFlyHmcOps;                       // For debugging long lasting hmc_ops in queue
-    int dbgOnFlyHmcOpsIsOn;                      // For debuggung late onFlyHMC ops (bool variable)
+    bool dbgOnFlyHmcOpsIsOn;                      // For debuggung late onFlyHMC ops (bool variable)
     int dbgOnFlyHmcOpsThresh;                    // For debuggung late onFlyHMC ops (threshhold Value)
 
     //Stat Format

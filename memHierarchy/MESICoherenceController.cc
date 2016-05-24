@@ -66,9 +66,9 @@ CacheAction MESIController::handleEviction(CacheLine* wbCacheLine, string rqstr,
 #endif
                 return STALL;
             }
-            sendWriteback(PutS, wbCacheLine, false, rqstr);
+            if (!silentEvictClean_) sendWriteback(PutS, wbCacheLine, false, rqstr);
+            if (expectWritebackAck_) mshr_->insertWriteback(wbBaseAddr);
             wbCacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(wbBaseAddr);
 	    return DONE;
         case E:
             if (!inclusive_ && wbCacheLine->ownerExists()) {
@@ -92,9 +92,9 @@ CacheAction MESIController::handleEviction(CacheLine* wbCacheLine, string rqstr,
 #endif
                 return STALL;
             }
-            sendWriteback(PutE, wbCacheLine, false, rqstr);
+            if (!silentEvictClean_) sendWriteback(PutE, wbCacheLine, false, rqstr);
+            if (expectWritebackAck_) mshr_->insertWriteback(wbBaseAddr);
 	    wbCacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(wbBaseAddr);
 	    return DONE;
         case M:
             if (!inclusive_ && wbCacheLine->ownerExists()) {
@@ -120,7 +120,7 @@ CacheAction MESIController::handleEviction(CacheLine* wbCacheLine, string rqstr,
             }
 	    sendWriteback(PutM, wbCacheLine, true, rqstr);
             wbCacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(wbBaseAddr);
+            if (expectWritebackAck_) mshr_->insertWriteback(wbBaseAddr);
 	    return DONE;
         case IS:
         case IM:
@@ -272,8 +272,8 @@ bool MESIController::isRetryNeeded(MemEvent* event, CacheLine* cacheLine) {
         case PutS:
         case PutE:
         case PutM:
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) 
-                if (!mshr_->pendingWriteback(cacheLine->getBaseAddr())) return false;
+            if (expectWritebackAck_ && !mshr_->pendingWriteback(cacheLine->getBaseAddr())) 
+                return false;
             return true;
         case FetchInv:
         case FetchInvX:
@@ -313,6 +313,7 @@ int MESIController::isCoherenceMiss(MemEvent* event, CacheLine* cacheLine) {
         case E:
         case M:
             if (cacheLine->ownerExists()) return 3;
+            if (cmd == GetS) return 0;  // hit
             if (cmd == GetX) {
                 if (cacheLine->isShareless() || (cacheLine->isSharer(event->getSrc()) && cacheLine->numSharers() == 1)) return 0; // Hit
             }
@@ -527,17 +528,17 @@ CacheAction MESIController::handlePutSRequest(MemEvent* event, CacheLine* line, 
         /* Races with evictions */
         case SI:
             sendWriteback(PutS, line, false, name_);
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(line->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(line->getBaseAddr());
             line->setState(I);
             return DONE;
         case EI:
             sendWriteback(PutE, line, false, name_);
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(line->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(line->getBaseAddr());
             line->setState(I);
             return DONE;
         case MI:
             sendWriteback(PutM, line, true, name_);
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(line->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(line->getBaseAddr());
             line->setState(I);
             return DONE;
         /* Race with a fetch */
@@ -657,12 +658,12 @@ CacheAction MESIController::handlePutMRequest(MemEvent* event, CacheLine* cacheL
                 sendWriteback(PutE, cacheLine, false, name_);
             }
 	    cacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(cacheLine->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(cacheLine->getBaseAddr());
             break;
         case MI:
             sendWriteback(PutM, cacheLine, true, name_);
 	    cacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(cacheLine->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(cacheLine->getBaseAddr());
             break;
         /* Races with FetchInv from outside our sub-hierarchy; races with GetX from within our sub-hierarchy */
         case E_Inv:
@@ -933,6 +934,9 @@ CacheAction MESIController::handleFetch(MemEvent * event, CacheLine * cacheLine,
  */
 CacheAction MESIController::handleDataResponse(MemEvent* responseEvent, CacheLine* cacheLine, MemEvent* origRequest){
     
+    // Update memFlags so it's copied through on the way up
+    origRequest->setMemFlags(responseEvent->getMemFlags());
+
     if (!inclusive_ && (cacheLine == NULL || cacheLine->getState() == I)) {
         uint64_t sendTime = sendResponseUp(origRequest, responseEvent->getGrantedState(), &responseEvent->getPayload(), true, 0);
         if (cacheLine != NULL) cacheLine->setTimestamp(sendTime);
@@ -1031,12 +1035,12 @@ CacheAction MESIController::handleFetchResp(MemEvent * responseEvent, CacheLine*
         case EI:
             sendWriteback(responseEvent->getDirty() ? PutM : PutE, cacheLine, responseEvent->getDirty(), name_);
 	    cacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(cacheLine->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(cacheLine->getBaseAddr());
             break;
         case MI:
             sendWriteback(PutM, cacheLine, true, name_);
 	    cacheLine->setState(I);    // wait for ack
-            if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(cacheLine->getBaseAddr());
+            if (expectWritebackAck_) mshr_->insertWriteback(cacheLine->getBaseAddr());
             break;
         case E_InvX:
             cacheLine->clearOwner();
@@ -1158,21 +1162,21 @@ CacheAction MESIController::handleAckInv(MemEvent * ack, CacheLine * line, MemEv
         case SI:
             if (action == DONE) {
                 sendWriteback(PutS, line, false, name_);
-                if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(line->getBaseAddr());
+                if (expectWritebackAck_) mshr_->insertWriteback(line->getBaseAddr());
                 line->setState(I);
             }
             return action;
         case EI:
             if (action == DONE) {
                 sendWriteback(PutE, line, false, name_);
-                if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(line->getBaseAddr());
+                if (expectWritebackAck_) mshr_->insertWriteback(line->getBaseAddr());
                 line->setState(I);
             }
             return action;
         case MI:
             if (action == DONE) {
                 sendWriteback(PutM, line, true, name_);
-                if (!LL_ && (LLC_ || writebackCleanBlocks_)) mshr_->insertWriteback(line->getBaseAddr());
+                if (expectWritebackAck_) mshr_->insertWriteback(line->getBaseAddr());
                 line->setState(I);
             }
             return action;

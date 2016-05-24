@@ -88,6 +88,4 @@ bool simpleMessageGeneratorComponent::tick( Cycle_t )
 
 // Element Libarary / Serialization stuff
     
-BOOST_CLASS_EXPORT(SST::SimpleMessageGeneratorComponent::simpleMessage)
-BOOST_CLASS_EXPORT(SST::SimpleMessageGeneratorComponent::simpleMessageGeneratorComponent)
 

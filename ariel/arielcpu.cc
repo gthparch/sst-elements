@@ -32,22 +32,22 @@ using namespace SST::ArielComponent;
 ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 	Component(id) {
 
-	int verbosity = params.find_integer("verbose", 0);
+	int verbosity = params.find<int>("verbose", 0);
 	output = new SST::Output("ArielComponent[@f:@l:@p] ",
 		verbosity, 0, SST::Output::STDOUT);
 
         // see if we should send allocation events out on links
-	useAllocTracker = params.find_integer("alloctracker", 0);
+	useAllocTracker = params.find<int>("alloctracker", 0);
 
 	output->verbose(CALL_INFO, 1, 0, "Creating Ariel component...\n");
 
-	core_count = (uint32_t) params.find_integer("corecount", 1);
+	core_count = (uint32_t) params.find<uint32_t>("corecount", 1);
 	output->verbose(CALL_INFO, 1, 0, "Configuring for %" PRIu32 " cores...\n", core_count);
 
-	uint32_t perform_checks = (uint32_t) params.find_integer("checkaddresses", 0);
+	uint32_t perform_checks = (uint32_t) params.find<uint32_t>("checkaddresses", 0);
 	output->verbose(CALL_INFO, 1, 0, "Configuring for check addresses = %s\n", (perform_checks > 0) ? "yes" : "no");
 
-	memory_levels = (uint32_t) params.find_integer("memorylevels", 1);
+	memory_levels = (uint32_t) params.find<uint32_t>("memorylevels", 1);
 	output->verbose(CALL_INFO, 1, 0, "Configuring for %" PRIu32 " memory levels.\n", memory_levels);
 
 	page_sizes = (uint64_t*) malloc( sizeof(uint64_t) * memory_levels );
@@ -56,14 +56,14 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 	char* level_buffer = (char*) malloc(sizeof(char) * 256);
 	for(uint32_t i = 0; i < memory_levels; ++i) {
 		sprintf(level_buffer, "pagesize%" PRIu32, i);
-		page_sizes[i] = (uint64_t) params.find_integer(level_buffer, 4096);
+		page_sizes[i] = (uint64_t) params.find<uint64_t>(level_buffer, 4096);
 
 		sprintf(level_buffer, "pagecount%" PRIu32, i);
-		page_counts[i] = (uint64_t) params.find_integer(level_buffer, 131072);
+		page_counts[i] = (uint64_t) params.find<uint64_t>(level_buffer, 131072);
 	}
 
-	uint32_t default_level = (uint32_t) params.find_integer("defaultlevel", 0);
-	uint32_t translateCacheSize = (uint32_t) params.find_integer("translatecacheentries", 4096);
+	uint32_t default_level = (uint32_t) params.find<uint32_t>("defaultlevel", 0);
+	uint32_t translateCacheSize = (uint32_t) params.find<uint32_t>("translatecacheentries", 4096);
 
 	output->verbose(CALL_INFO, 1, 0, "Creating memory manager, default allocation from %" PRIu32 " memory pool.\n", default_level);
 	memmgr = new ArielMemoryManager(this, memory_levels,
@@ -72,7 +72,7 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 	// Prepopulate any page tables as we find them
 	for(uint32_t i = 0; i < memory_levels; ++i) {
 		sprintf(level_buffer, "page_populate_%" PRIu32, i);
-		std::string popFilePath = params.find_string(level_buffer, "");
+		std::string popFilePath = params.find<std::string>(level_buffer, "");
 
 		if(popFilePath != "") {
 			output->verbose(CALL_INFO, 1, 0, "Populating page tables for level %" PRIu32 " from %s...\n",
@@ -82,7 +82,7 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 	}
 	free(level_buffer);
 
-	bool enableTLBTranslate = (params.find_string("vtop_translate", "yes") == "yes");
+	bool enableTLBTranslate = params.find<bool>("vtop_translate", true);
 	if(enableTLBTranslate) {
 		memmgr->enableTranslation();
 	} else {
@@ -91,10 +91,10 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 
 	output->verbose(CALL_INFO, 1, 0, "Memory manager construction is completed.\n");
 
-	uint32_t maxIssuesPerCycle   = (uint32_t) params.find_integer("maxissuepercycle", 1);
-	uint32_t maxCoreQueueLen     = (uint32_t) params.find_integer("maxcorequeue", 64);
-	uint32_t maxPendingTransCore = (uint32_t) params.find_integer("maxtranscore", 16);
-	uint64_t cacheLineSize       = (uint64_t) params.find_integer("cachelinesize", 64);
+	uint32_t maxIssuesPerCycle   = (uint32_t) params.find<uint32_t>("maxissuepercycle", 1);
+	uint32_t maxCoreQueueLen     = (uint32_t) params.find<uint32_t>("maxcorequeue", 64);
+	uint32_t maxPendingTransCore = (uint32_t) params.find<uint32_t>("maxtranscore", 16);
+	uint64_t cacheLineSize       = (uint64_t) params.find<uint32_t>("cachelinesize", 64);
 
 	/////////////////////////////////////////////////////////////////////////////////////
 
@@ -105,55 +105,59 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
     int fd = mkstemp(shmem_region_name);
     close(fd);
 
-	output->verbose(CALL_INFO, 1, 0, "Base pipe name: %s\n", shmem_region_name);
+    output->verbose(CALL_INFO, 1, 0, "Base pipe name: %s\n", shmem_region_name);
 
-	/////////////////////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////////////////////
 
-        char* tool_path = (char*) malloc(sizeof(char) * 1024);
+    char* tool_path = (char*) malloc(sizeof(char) * 1024);
 
 #ifdef SST_COMPILE_MACOSX
-        sprintf(tool_path, "%s/libexec/fesimple.dylib", SST_INSTALL_PREFIX);
+    sprintf(tool_path, "%s/libexec/fesimple.dylib", SST_INSTALL_PREFIX);
 #else
-        sprintf(tool_path, "%s/libexec/fesimple.so", SST_INSTALL_PREFIX);
+    sprintf(tool_path, "%s/libexec/fesimple.so", SST_INSTALL_PREFIX);
 #endif
 
-	std::string ariel_tool = params.find_string("arieltool", tool_path);
+	std::string ariel_tool = params.find<std::string>("arieltool", tool_path);
 	if("" == ariel_tool) {
 		output->fatal(CALL_INFO, -1, "The arieltool parameter specifying which PIN tool to run was not specified\n");
 	}
 
-        free(tool_path);
+    free(tool_path);
 
-	std::string executable = params.find_string("executable", "");
+	std::string executable = params.find<std::string>("executable", "");
 	if("" == executable) {
 		output->fatal(CALL_INFO, -1, "The input deck did not specify an executable to be run against PIN\n");
 	}
 
-	uint32_t app_argc = (uint32_t) params.find_integer("appargcount", 0);
+	uint32_t app_argc = (uint32_t) params.find<uint32_t>("appargcount", 0);
 	output->verbose(CALL_INFO, 1, 0, "Model specifies that there are %" PRIu32 " application arguments\n", app_argc);
 
-	uint32_t pin_startup_mode = (uint32_t) params.find_integer("arielmode", 2);
-	uint32_t intercept_multilev_mem = (uint32_t) params.find_integer("arielinterceptcalls", 1);
+	uint32_t pin_startup_mode = (uint32_t) params.find<uint32_t>("arielmode", 2);
+	uint32_t intercept_multilev_mem = (uint32_t) params.find<uint32_t>("arielinterceptcalls", 1);
 
-	switch(intercept_multilev_mem) {
-	case 0:
+    switch(intercept_multilev_mem) {
+        case 0:
 		output->verbose(CALL_INFO, 1, 0, "Interception and re-instrumentation of multi-level memory calls is DISABLED.\n");
 		break;
 	default:
-		output->verbose(CALL_INFO, 1, 0, "Interception and instrumentation of multi-level memory calls is ENABLED\n");
+		output->verbose(CALL_INFO, 1, 0, "Interception and instrumentation of multi-level memory calls is ENABLED.\n");
 		break;
-	}
+    }
+    
+    uint32_t keep_malloc_stack_trace = (uint32_t) params.find<uint32_t>("arielstack", 0);
+    output->verbose(CALL_INFO, 1, 0, "Tracking the stack and dumping on malloc calls is %s.\n", 
+            keep_malloc_stack_trace == 1 ? "ENABLED" : "DISABLED");
 
     tunnel = new ArielTunnel(shmem_region_name, core_count, maxCoreQueueLen);
 
-    appLauncher = params.find_string("launcher", PINTOOL_EXECUTABLE);
+    appLauncher = params.find<std::string>("launcher", PINTOOL_EXECUTABLE);
 
-    const uint32_t launch_param_count = (uint32_t) params.find_integer("launchparamcount", 0);
-    const uint32_t pin_arg_count = 23 + launch_param_count;
+    const uint32_t launch_param_count = (uint32_t) params.find<uint32_t>("launchparamcount", 0);
+    const uint32_t pin_arg_count = 25 + launch_param_count;
 
     execute_args = (char**) malloc(sizeof(char*) * (pin_arg_count + app_argc));
 
-    const uint32_t profileFunctions = (uint32_t) params.find_integer("profilefunctions", 0);
+    const uint32_t profileFunctions = (uint32_t) params.find<uint32_t>("profilefunctions", 0);
 
     output->verbose(CALL_INFO, 1, 0, "Processing application arguments...\n");
 
@@ -171,7 +175,7 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 
     for(uint32_t aa = 0; aa < launch_param_count; aa++) {
 	sprintf(param_name_buffer, "launchparam%" PRIu32, aa);
-	std::string launch_p = params.find_string(param_name_buffer, "");
+	std::string launch_p = params.find<std::string>(param_name_buffer, "");
 
 	if("" == launch_p) {
 		output->fatal(CALL_INFO, -1, "Error: launch parameter %" PRId32 " is empty string, this must be set to a value.\n",
@@ -209,6 +213,9 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
     execute_args[arg++] = const_cast<char*>("-m");
     execute_args[arg++] = (char*) malloc(sizeof(char) * 8);
     sprintf(execute_args[arg-1], "%" PRIu32, intercept_multilev_mem);
+    execute_args[arg++] = const_cast<char*>("-k");
+    execute_args[arg++] = (char*) malloc(sizeof(char) * 8);
+    sprintf(execute_args[arg-1], "%" PRIu32, keep_malloc_stack_trace);
     execute_args[arg++] = const_cast<char*>("-d");
     execute_args[arg++] = (char*) malloc(sizeof(char) * 8);
     sprintf(execute_args[arg-1], "%" PRIu32, default_level);
@@ -219,7 +226,7 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 	char* argv_buffer = (char*) malloc(sizeof(char) * 256);
 	for(uint32_t aa = 0; aa < app_argc ; ++aa) {
 		sprintf(argv_buffer, "apparg%" PRIu32, aa);
-		std::string argv_i = params.find_string(argv_buffer, "");
+		std::string argv_i = params.find<std::string>(argv_buffer, "");
 
 		output->verbose(CALL_INFO, 1, 0, "Found application argument %" PRIu32 " (%s) = %s\n", 
 			aa, argv_buffer, argv_i.c_str());
@@ -230,14 +237,14 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
     execute_args[arg] = NULL;
 	free(argv_buffer);
 
-	const int32_t pin_env_count = params.find_integer("envparamcount", -1);
+	const int32_t pin_env_count = params.find<int32_t>("envparamcount", -1);
 	if(pin_env_count > -1) {
 		char* env_name_buffer = (char*) malloc(sizeof(char) * 256);
 
 		for(int32_t next_env_param = 0; next_env_param < pin_env_count; next_env_param++) {
 			sprintf(env_name_buffer, "envparamname%" PRId32 , next_env_param);
 
-			std::string env_name = params.find_string(env_name_buffer, "");
+			std::string env_name = params.find<std::string>(env_name_buffer, "");
 
 			if("" == env_name) {
 				output->fatal(CALL_INFO, -1, "Parameter: %s environment variable name is empty",
@@ -246,7 +253,7 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 
 			sprintf(env_name_buffer, "envparamval%" PRId32, next_env_param);
 
-			std::string env_value = params.find_string(env_name_buffer, "");
+			std::string env_value = params.find<std::string>(env_name_buffer, "");
 
 			execute_env.insert(std::pair<std::string, std::string>(
 				env_name, env_value));
@@ -298,7 +305,7 @@ ArielCPU::ArielCPU(ComponentId_t id, Params& params) :
 	}
 	free(link_buffer);
 
-	std::string cpu_clock = params.find_string("clock", "1GHz");
+	std::string cpu_clock = params.find<std::string>("clock", "1GHz");
 	output->verbose(CALL_INFO, 1, 0, "Registering ArielCPU clock at %s\n", cpu_clock.c_str());
 
 	registerClock( cpu_clock, new Clock::Handler<ArielCPU>(this, &ArielCPU::tick ) );
@@ -341,6 +348,7 @@ void ArielCPU::finish() {
 	}
 
 	memmgr->printStats();
+	unlink(shmem_region_name);
 }
 
 int ArielCPU::forkPINChild(const char* app, char** args, std::map<std::string, std::string>& app_env) {
@@ -480,12 +488,16 @@ bool ArielCPU::tick( SST::Cycle_t cycle) {
 }
 
 ArielCPU::~ArielCPU() {
+	// Delete all of the cores
+	for(uint32_t i = 0; i < core_count; i++) {
+		delete cpu_cores[i];
+	}
+
 	delete memmgr;
 	delete tunnel;
-    unlink(shmem_region_name);
+        unlink(shmem_region_name);
 	free(page_sizes);
 	free(page_counts);
-
 }
 
 void ArielCPU::emergencyShutdown() {
