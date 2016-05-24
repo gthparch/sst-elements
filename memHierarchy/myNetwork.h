@@ -92,7 +92,7 @@ private:
   LinkId_t lookupNode(const string& name);
 
   uint64_t convertToLocalAddress(uint64_t requestedAddress, uint64_t rangeStart, bool cgr);
-  uint64_t convertToFlatAddress(uint64_t localAddress, uint64_t rangeStart, bool cgr);
+  uint64_t convertToGlobalAddress(uint64_t localAddress, uint64_t rangeStart, bool cgr);
 
   void initializePacketCounter();
   void resetPacketCounter();
@@ -159,8 +159,8 @@ private:
   map<string, LinkId_t> nameToLinkIdMap;
   map<LinkId_t, MemoryCompInfo*> linkToMemoryCompInfoMapForFGR;
   map<LinkId_t, MemoryCompInfo*> linkToMemoryCompInfoMapForCGR;
-  vector<map<uint64_t, uint64_t>> flatToLocalMap;
-  vector<map<uint64_t, uint64_t>> localToFlatMap;
+  vector<map<uint64_t, uint64_t>> globalToLocalAddressMap;
+  vector<map<uint64_t, uint64_t>> localToGlobalAddressMap;
   map<uint64_t, uint64_t> outstandingRequests;
 
   map<LinkId_t, LinkId_t> localPortMap;
