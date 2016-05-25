@@ -690,6 +690,7 @@ static const ElementInfoParam dirctrl_params[] = {
 
 static const ElementInfoPort dirctrl_ports[] = {
     {"memory",      "Link to Memory Controller", NULL},
+    {"mynetwork",   "Link to myNetwork", NULL},
     {"network",     "Network Link", NULL},
     {NULL, NULL, NULL}
 };
