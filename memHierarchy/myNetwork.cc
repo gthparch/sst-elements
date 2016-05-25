@@ -48,8 +48,8 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
     cout << *mci << endl;
 
     // initialize per-stack request and response queues
-    requestQueues.push_back(map<SST::Event*, uint64_t>());
-    responseQueues.push_back(map<SST::Event*, uint64_t>());
+    requestQueues.push_back(list<Transaction>());
+    responseQueues.push_back(list<Transaction>());
 
 #ifdef ENABLE_ADDRESS_CONVERSION
     localToGlobalAddressMap.push_back(map<uint64_t, uint64_t>());
@@ -99,38 +99,35 @@ bool MyNetwork::clockTick(Cycle_t time)
     dbg.debug(_L9_, "currentCycle:%" PRIu64 " start scheduling from PIM[%u]\n", currentCycle, stackIdx);
     for (unsigned counter = 0; counter < numStack; counter++) {
       unsigned numResponseSentThisCycle = 0;
-      for (auto& response : responseQueues[stackIdx]) {
-        uint64_t readyCycle = response.second;
-        if (readyCycle < currentCycle) { 
-          SST::Event* ev = response.first;
+      for (auto it = responseQueues[stackIdx].begin(); it != responseQueues[stackIdx].end();) {
+        Transaction &response = *it;
+        if (response.deliveryTime > currentCycle) { it++; continue; }
 
-          // This is for bandwidth control
-          MemEvent *me = static_cast<MemEvent*>(ev);
-          LinkId_t srcLinkId = me->getDeliveryLink()->getId();
-          LinkId_t dstLinkId = lookupNode(me->getDst());
-          AccessType accessType = isLocalAccess(srcLinkId, dstLinkId) ?
-            AccessType::pl : AccessType::ip;
+        MemEvent* me = response.event;
 
-          // if saturated, don't send any more response to the corresponding
-          // accessType
-          if (maxPacketPerCycle[accessType] <=
-              packetCounters[stackIdx][static_cast<unsigned>(accessType)])
-            continue;
+        // This is for bandwidth control
+        LinkId_t srcLinkId = me->getDeliveryLink()->getId();
+        LinkId_t dstLinkId = lookupNode(me->getDst());
 
-          sendResponse(ev);
-          responseQueues[stackIdx].erase(responseQueues[stackIdx].find(ev));
+        AccessType accessType = isLocalAccess(srcLinkId, dstLinkId) ? AccessType::pl : AccessType::ip;
+        // if saturated, don't send any more response to the corresponding accessType
+        if (maxPacketPerCycle[accessType] <= packetCounters[stackIdx][static_cast<unsigned>(accessType)]) { it++; continue; }
 
-          unsigned srcStackIdx = getStackIdx(srcLinkId);
-          unsigned dstStackIdx = getStackIdx(dstLinkId);
-          if (accessType == AccessType::pl) {
-            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-          } else {
-            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-            packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
-          }
+        sendResponse(me);
+        it = responseQueues[stackIdx].erase(it);
 
-          numResponseSentThisCycle++;
+        // This is for bandwidth control
+        unsigned srcStackIdx = getStackIdx(srcLinkId);
+        unsigned dstStackIdx = getStackIdx(dstLinkId);
+
+        if (accessType == AccessType::pl) {
+          packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+        } else {
+          packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+          packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
         }
+
+        numResponseSentThisCycle++;
       }
 
       if (numResponseSentThisCycle > 0) {
@@ -147,38 +144,36 @@ bool MyNetwork::clockTick(Cycle_t time)
 
     for (unsigned counter = 0; counter < numStack; counter++) {
       unsigned numRequestSentThisCycle = 0;
-      for (auto& request : requestQueues[stackIdx]) {
-        uint64_t readyCycle = request.second;
-        if (readyCycle < currentCycle) { 
-          SST::Event* ev = request.first;
+      for (auto it = requestQueues[stackIdx].begin(); it != requestQueues[stackIdx].end();) {
+        Transaction &request = *it;
+        if (request.deliveryTime > currentCycle) { it++; continue; }
+
+        MemEvent* me = request.event;
           
-          // This is for bandwidth control
-          MemEvent *me = static_cast<MemEvent*>(ev);
-          LinkId_t srcLinkId = me->getDeliveryLink()->getId();
-          LinkId_t dstLinkId = lookupNode(me->getAddr());
-          AccessType accessType = isLocalAccess(srcLinkId, dstLinkId) ?
-            AccessType::pl : AccessType::ip;
+        // This is for bandwidth control
+        LinkId_t srcLinkId = me->getDeliveryLink()->getId();
+        LinkId_t dstLinkId = lookupNode(me->getAddr());
 
-          // if saturated, don't send any more request to the corresponding
-          // accessType
-          if (maxPacketPerCycle[accessType] <=
-              packetCounters[stackIdx][static_cast<unsigned>(accessType)])
-            continue;
+        AccessType accessType = isLocalAccess(srcLinkId, dstLinkId) ?  AccessType::pl : AccessType::ip;
 
-          sendRequest(ev);
-          requestQueues[stackIdx].erase(requestQueues[stackIdx].find(ev));
+        // if saturated, don't send any more request to the corresponding accessType
+        if (maxPacketPerCycle[accessType] <= packetCounters[stackIdx][static_cast<unsigned>(accessType)]) { it++; continue; }
 
-          unsigned srcStackIdx = getStackIdx(srcLinkId);
-          unsigned dstStackIdx = getStackIdx(dstLinkId);
-          if (accessType == AccessType::pl) {
-            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-          } else {
-            packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
-            packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
-          }
+        sendRequest(me);
+        it = requestQueues[stackIdx].erase(it);
 
-          numRequestSentThisCycle++;
+        // This is for bandwidth control
+        unsigned srcStackIdx = getStackIdx(srcLinkId);
+        unsigned dstStackIdx = getStackIdx(dstLinkId);
+
+        if (accessType == AccessType::pl) {
+          packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+        } else {
+          packetCounters[srcStackIdx][static_cast<unsigned>(accessType)] += 1;
+          packetCounters[dstStackIdx][static_cast<unsigned>(accessType)] += 1;
         }
+
+        numRequestSentThisCycle++;
       }
 
       if (numRequestSentThisCycle > 0) {
@@ -195,55 +190,57 @@ bool MyNetwork::clockTick(Cycle_t time)
   }
   // 1-to-N or N-to-1 Mode
   else {
-    for (unsigned si = 0; si < numStack; si++) {
+    for (unsigned stackIdx = 0; stackIdx < numStack; stackIdx++) {
       unsigned numResponseSentThisCycle = 0;
-      for (auto& response : responseQueues[si]) {
-        uint64_t readyCycle = response.second;
-        if (readyCycle < currentCycle) { 
-          SST::Event* ev = response.first;
+      for (auto it = responseQueues[stackIdx].begin(); it != responseQueues[stackIdx].end();) {
+        Transaction &response = *it;
+        if (response.deliveryTime > currentCycle) { it++; continue; }
 
-          AccessType accessType = AccessType::hp;
-          // if saturated, don't send any more response
-          if (maxPacketPerCycle[accessType] <=
-              packetCounters[si][static_cast<unsigned>(accessType)])
-            continue;
+        MemEvent* me = response.event;
 
-          sendResponse(ev);
-          responseQueues[si].erase(responseQueues[si].find(ev));
-          packetCounters[si][static_cast<unsigned>(accessType)] += 1;
-          numResponseSentThisCycle++;
-        }
+        // This is for bandwidth control
+        AccessType accessType = AccessType::hp;
+        // if saturated, don't send any more response
+        if (maxPacketPerCycle[accessType] <= packetCounters[stackIdx][static_cast<unsigned>(accessType)]) { it++; continue; }
+
+        sendResponse(me);
+        it = responseQueues[stackIdx].erase(it);
+
+        // This is for bandwidth control
+        packetCounters[stackIdx][static_cast<unsigned>(accessType)] += 1;
+        numResponseSentThisCycle++;
       }
 
       if (numResponseSentThisCycle > 0) {
         dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM responses from PIM[%u]\n", 
-          currentCycle, packetCounters[si][static_cast<int>(AccessType::hp)], si);
+          currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::hp)], stackIdx);
       }
     }
 
-    for (unsigned si = 0; si < numStack; si++) {
+    for (unsigned stackIdx = 0; stackIdx < numStack; stackIdx++) {
       unsigned numRequestSentThisCycle = 0;
-      for (auto& request : requestQueues[si]) {
-        uint64_t readyCycle = request.second;
-        if (readyCycle < currentCycle) { 
-          SST::Event* ev = request.first;
+      for (auto it = requestQueues[stackIdx].begin(); it != requestQueues[stackIdx].end();) {
+        Transaction &request = *it;
+        if (request.deliveryTime > currentCycle) { it++; continue; }
 
-          AccessType accessType = AccessType::hp;
-          // if saturated, don't send any more request
-          if (maxPacketPerCycle[accessType] <=
-              packetCounters[si][static_cast<unsigned>(accessType)])
-            continue;
+        MemEvent* me = request.event;
 
-          sendRequest(ev);
-          requestQueues[si].erase(requestQueues[si].find(ev));
-          packetCounters[si][static_cast<unsigned>(accessType)] += 1;
-          numRequestSentThisCycle++;
-        }
+        // This is for bandwidth control
+        AccessType accessType = AccessType::hp;
+        // if saturated, don't send any more request
+        if (maxPacketPerCycle[accessType] <= packetCounters[stackIdx][static_cast<unsigned>(accessType)]) { it++; continue; }
+
+        sendRequest(me);
+        it = requestQueues[stackIdx].erase(it);
+
+        // This is for bandwidth control
+        packetCounters[stackIdx][static_cast<unsigned>(accessType)] += 1;
+        numRequestSentThisCycle++;
       }
 
       if (numRequestSentThisCycle > 0) {
         dbg.debug(_L9_,"currentCycle:%" PRIu64 " sending %u host-PIM  requests/responses to/from PIM[%u]\n", 
-          currentCycle, packetCounters[si][static_cast<int>(AccessType::hp)], si);
+          currentCycle, packetCounters[stackIdx][static_cast<int>(AccessType::hp)], stackIdx);
       }
     }
   }
@@ -268,11 +265,13 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
 
     bool localAccess = isLocalAccess(srcLinkId, dstLinkId);
     unsigned latency = localAccess ? localLatency : remoteLatency;
-    uint64_t readyCycle = currentCycle + latency;
+    uint64_t deliveryTime = currentCycle + latency;
 
     unsigned srcStackIdx = getStackIdx(srcLinkId);
     unsigned dstStackIdx = getStackIdx(dstLinkId);
-    requestQueues[srcStackIdx][ev] = readyCycle; 
+
+    Transaction t = {me, deliveryTime};
+    addToRequestQueue(srcStackIdx, t);
 
     // statistics
     perStackRequests[srcStackIdx][dstStackIdx]++;
@@ -280,9 +279,9 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
 
     if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
       dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " src:%s dst:%u "
-        "currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
+        "currentCycle:%" PRIu64 " deliveryTime:%" PRIu64 "\n",
         CommandString[me->getCmd()], me->getAddr(), me->getSrc().c_str(),
-        dstStackIdx, currentCycle, readyCycle);
+        dstStackIdx, currentCycle, deliveryTime);
     }
   }
   // 1-to-N or N-to-1 Mode
@@ -291,8 +290,10 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
     unsigned dstStackIdx = getStackIdx(dstLinkId);
 
     // use <latency> for 1-to-N and N-to-1 configuration
-    uint64_t readyCycle = currentCycle + latency;
-    requestQueues[dstStackIdx][ev] = readyCycle;
+    uint64_t deliveryTime = currentCycle + latency;
+
+    Transaction t = {me, deliveryTime};
+    addToRequestQueue(dstStackIdx, t);
 
     // statistics
     requests[dstStackIdx]++;
@@ -311,11 +312,13 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
 
     bool localAccess = isLocalAccess(srcLinkId, dstLinkId);
     unsigned latency = localAccess ? localLatency : remoteLatency;
-    uint64_t readyCycle = currentCycle + latency;
+    uint64_t deliveryTime = currentCycle + latency;
 
     unsigned srcStackIdx = getStackIdx(srcLinkId);
     unsigned dstStackIdx = getStackIdx(dstLinkId);
-    responseQueues[srcStackIdx][ev] = readyCycle; 
+
+    Transaction t = {me, deliveryTime};
+    addToResponseQueue(srcStackIdx, t);
 
     uint64_t addr = UINT64_MAX;
 #ifdef ENABLE_ADDRESS_CONVERSION
@@ -338,8 +341,8 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     perStackResponses[srcStackIdx][dstStackIdx]++;
 
     if (DEBUG_ALL || DEBUG_ADDR == addr) {
-      dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " dst:%s currentCycle:%" PRIu64 " readyCycle:%" PRIu64 "\n",
-        CommandString[me->getCmd()], addr, me->getDst().c_str(), currentCycle, readyCycle);
+      dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " dst:%s currentCycle:%" PRIu64 " deliveryTime:%" PRIu64 "\n",
+        CommandString[me->getCmd()], addr, me->getDst().c_str(), currentCycle, deliveryTime);
     }
   }
   // 1-to-N or N-to-1 Mode
@@ -348,8 +351,10 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     unsigned srcStackIdx = getStackIdx(srcLinkId);
 
     // use <latency> for 1-to-N and N-to-1 configuration
-    uint64_t readyCycle = currentCycle + latency;
-    responseQueues[srcStackIdx][ev] = readyCycle;
+    uint64_t deliveryTime = currentCycle + latency;
+
+    Transaction t = {me, deliveryTime};
+    addToResponseQueue(srcStackIdx, t);
 
     // statistics
     responses[srcStackIdx]++;
@@ -367,10 +372,8 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
   }
 }
 
-void MyNetwork::sendRequest(SST::Event* ev) 
+void MyNetwork::sendRequest(MemEvent* me) 
 {
-  MemEvent *me = static_cast<MemEvent*>(ev);
-
   LinkId_t srcLinkId = me->getDeliveryLink()->getId();
   LinkId_t dstLinkId = lookupNode(me->getAddr());
   SST::Link* dstLink = getLink(dstLinkId);
@@ -427,10 +430,10 @@ void MyNetwork::sendRequest(SST::Event* ev)
 #endif
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
-    dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " (localAddr:0x%" PRIx64 ") at currentCycle: %" PRIu64 " from %u to %u\n", 
-        CommandString[me->getCmd()], me->getAddr(), forwardEvent->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
+    dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
+        CommandString[me->getCmd()], me->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
 
-    dbg.debug(_L3_,"la: 0x%" PRIx64 " base la: 0x%" PRIx64 " va: 0x%" PRIx64 "\n", 
+    dbg.debug(_L10_,"la: 0x%" PRIx64 " base la: 0x%" PRIx64 " va: 0x%" PRIx64 "\n", 
         forwardEvent->getAddr(), forwardEvent->getBaseAddr(), forwardEvent->getVirtualAddress());
   }
 
@@ -438,10 +441,8 @@ void MyNetwork::sendRequest(SST::Event* ev)
   delete me;
 }
 
-void MyNetwork::sendResponse(SST::Event* ev) 
+void MyNetwork::sendResponse(MemEvent* me) 
 {
-  MemEvent *me = static_cast<MemEvent*>(ev);
-
   LinkId_t srcLinkId = me->getDeliveryLink()->getId();
   LinkId_t dstLinkId = lookupNode(me->getDst());
   SST::Link* dstLink = getLink(dstLinkId);
@@ -490,7 +491,7 @@ void MyNetwork::sendResponse(SST::Event* ev)
     dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
         CommandString[me->getCmd()], forwardEvent->getAddr(), currentCycle, srcStackIdx, dstStackIdx);
 
-    dbg.debug(_L3_,"fa: 0x%" PRIx64 " base fa: 0x%" PRIx64 " va: 0x%" PRIx64 "\n", 
+    dbg.debug(_L10_,"fa: 0x%" PRIx64 " base fa: 0x%" PRIx64 " va: 0x%" PRIx64 "\n", 
         forwardEvent->getAddr(), forwardEvent->getBaseAddr(), forwardEvent->getVirtualAddress());
   }
 
@@ -516,7 +517,7 @@ LinkId_t MyNetwork::lookupNode(const uint64_t addr)
   for (auto it : linkToMemoryCompInfoMapForFGR) {
     if (it.second->contains(addr)) {
       dstLinkId = it.first;
-      dbg.debug(_L3_,"0x%" PRIx64 " found in FGR in %u\n", addr, getStackIdx(dstLinkId));
+      dbg.debug(_L10_,"0x%" PRIx64 " found in FGR in %u\n", addr, getStackIdx(dstLinkId));
     }
   }
 
@@ -524,7 +525,7 @@ LinkId_t MyNetwork::lookupNode(const uint64_t addr)
   for (auto it : linkToMemoryCompInfoMapForCGR) {
     if (it.second->contains(addr)) {
       dstLinkId = it.first;
-      dbg.debug(_L3_,"0x%" PRIx64 " found in CGR in %u\n", addr, getStackIdx(dstLinkId));
+      dbg.debug(_L10_,"0x%" PRIx64 " found in CGR in %u\n", addr, getStackIdx(dstLinkId));
     }
   }
 

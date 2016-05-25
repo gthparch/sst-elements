@@ -25,6 +25,17 @@ namespace SST { namespace MemHierarchy {
 
 class MyNetwork : public SST::Component 
 {
+private:
+  enum class AccessType { pl = 0, ip, hp, max };
+  const string AccessTypeName[static_cast<unsigned>(AccessType::max)] = {
+    "PIM_LOCAL", "INTER_PIM", "HOST_PIM" 
+  };
+
+  struct Transaction {
+    MemEvent* event;
+    uint64_t deliveryTime;
+  };
+
 public:
   MyNetwork(SST::ComponentId_t id, SST::Params& params);
   virtual ~MyNetwork();
@@ -82,8 +93,8 @@ private:
   void processIncomingResponse(SST::Event *ev);  
 
   uint64_t toBaseAddr(uint64_t addr) const { return addr & ~(packetSize - 1); }
-  void sendRequest(SST::Event *ev);
-  void sendResponse(SST::Event *ev);
+  void sendRequest(MemEvent *me);
+  void sendResponse(MemEvent *me);
   
   bool clockTick(Cycle_t);
   
@@ -102,6 +113,24 @@ private:
   SST::Link* getLink(LinkId_t lid) { return linkIdToLinkMap[lid]; }
   MemoryCompInfo* getMemoryCompInfoForFGR(LinkId_t lid) { return linkToMemoryCompInfoMapForFGR[lid]; }
   MemoryCompInfo* getMemoryCompInfoForCGR(LinkId_t lid) { return linkToMemoryCompInfoMapForCGR[lid]; }
+
+  void addToRequestQueue(unsigned idx, Transaction& t) {
+    list<Transaction>::reverse_iterator rit;
+    for (rit = requestQueues[idx].rbegin(); rit != requestQueues[idx].rend(); rit++) {
+      if (t.deliveryTime >= (*rit).deliveryTime) break;
+      if (t.event->getBaseAddr() == (*rit).event->getBaseAddr()) break;
+    }
+    requestQueues[idx].insert(rit.base(), t);
+  }
+
+  void addToResponseQueue(unsigned idx, Transaction& t) {
+    list<Transaction>::reverse_iterator rit;
+    for (rit = responseQueues[idx].rbegin(); rit != responseQueues[idx].rend(); rit++) {
+      if (t.deliveryTime >= (*rit).deliveryTime) break;
+      if (t.event->getBaseAddr() == (*rit).event->getBaseAddr()) break;
+    }
+    responseQueues[idx].insert(rit.base(), t);
+  }
   
   void initStats();
   void printStats();
@@ -128,11 +157,6 @@ private:
   }
 
 private:
-  enum class AccessType { pl = 0, ip, hp, max };
-  const string AccessTypeName[static_cast<unsigned>(AccessType::max)] = {
-    "PIM_LOCAL", "INTER_PIM", "HOST_PIM" 
-  };
-
   Output dbg;
   bool DEBUG_ALL;
   Addr DEBUG_ADDR;
@@ -140,9 +164,9 @@ private:
   uint64_t packetSize;
 
   // per-stack request queue; request and its ready cycle
-  vector<map<SST::Event*, uint64_t>> requestQueues;
+  vector<list<Transaction>> requestQueues;
   // per-stack response queue; response and its ready cycle
-  vector<map<SST::Event*, uint64_t>> responseQueues;
+  vector<list<Transaction>> responseQueues;
 
   map<AccessType, unsigned> maxPacketPerCycle;
   vector<vector<unsigned>> packetCounters;

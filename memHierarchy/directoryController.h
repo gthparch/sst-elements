@@ -59,6 +59,15 @@ class DirectoryController : public Component {
     Addr        addrRangeEnd;
     Addr        interleaveSize;
     Addr        interleaveStep;
+
+    unsigned    stackId;
+    Addr        stackSize;
+    Addr        pageSize;
+    unsigned    numStack;
+    Addr        FGRStart;
+    Addr        FGREnd;
+    Addr        CGRStart;
+    Addr        CGREnd;
     
     string      protocol;
     
@@ -126,6 +135,7 @@ class DirectoryController : public Component {
 
     /* Network connections */
     SST::Link*  memLink;
+    SST::Link*  myNetworkLink;
     MemNIC*     network;
     string      memoryName; // if connected to mem via network, this should be the name of the memory we own - param is memory_name
     

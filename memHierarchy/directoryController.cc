@@ -20,6 +20,7 @@
 
 #include "memNIC.h"
 
+#define USE_MY_NETWORK
 
 using namespace SST;
 using namespace SST::MemHierarchy;
@@ -62,11 +63,23 @@ DirectoryController::DirectoryController(ComponentId_t id, Params &params) :
     addrRangeStart  = (uint64_t)params.find_integer("addr_range_start", 0);
     addrRangeEnd    = (uint64_t)params.find_integer("addr_range_end", 0);
     interleaveSize  = (Addr)params.find_integer("interleave_size", 0);
-    interleaveSize  *= 1024;
+    //interleaveSize  *= 1024;
     interleaveStep  = (Addr)params.find_integer("interleave_step", 0);
-    interleaveStep  *= 1024;
+    //interleaveStep  *= 1024;
     protocol        = params.find_string("coherence_protocol", "");
     dbg.debug(_L5_, "Directory controller using protocol: %s\n", protocol.c_str());
+
+    stackId = addrRangeStart / interleaveSize; // stack id
+    pageSize = 4096;
+    numTargets = numStack = (unsigned)(interleaveStep / interleaveSize);
+    stackSize = (addrRangeEnd + (numStack - stackId - 1) * interleaveSize) * 2 / numStack;
+
+    FGRStart = addrRangeStart - stackId * interleaveSize;
+    FGREnd = addrRangeEnd + (numStack - stackId - 1) * interleaveSize; // technically -1 should be added
+    CGRStart = FGREnd;
+    CGREnd = 2 * CGRStart; // technically -1 should be added
+
+    dbg.debug(_L5_, "interleaveSize:%" PRIu64 ", interleaveStep:%" PRIu64 " stackSize:0x%" PRIx64 "\n", interleaveSize, interleaveStep, stackSize); 
     
     int mshrSize    = params.find_integer("mshr_num_entries",-1);
     if (mshrSize == -1) mshrSize = HUGE_MSHR;
@@ -74,7 +87,6 @@ DirectoryController::DirectoryController(ComponentId_t id, Params &params) :
     mshr                = new MSHR(&dbg, mshrSize, this->getName(), DEBUG_ALL, DEBUG_ADDR); 
     
     if(0 == addrRangeEnd) addrRangeEnd = (uint64_t)-1;
-    numTargets = 0;
 	
     /* Check parameter validity */
     if(! ("MESI" == protocol || "mesi" == protocol || "MSI" == protocol || "msi" == protocol) ) {
@@ -94,6 +106,13 @@ DirectoryController::DirectoryController(ComponentId_t id, Params &params) :
         if (!memLink) {
             dbg.fatal(CALL_INFO, -1, "%s, Error creating link to memory from directory controller\n", getName().c_str());
         }
+
+#ifdef USE_MY_NETWORK
+        myNetworkLink = configureLink("mynetwork", "1 ns", new Event::Handler<DirectoryController>(this, &DirectoryController::handlePacket));
+        if (!myNetworkLink) {
+            dbg.fatal(CALL_INFO, -1, "%s, Error creating link to myNetwork from directory controller\n", getName().c_str());
+        }
+#else
         MemNIC::ComponentInfo myInfo;
         myInfo.link_port                        = "network";
         myInfo.link_bandwidth                   = net_bw;
@@ -115,7 +134,9 @@ DirectoryController::DirectoryController(ComponentId_t id, Params &params) :
         typeInfo.interleaveStep = interleaveStep;
         typeInfo.blocksize      = 0;
         network->addTypeInfo(typeInfo);
+#endif
     } else {
+        // hyo: this code will never be reached in my simulation
         memoryName  = params.find_string("net_memory_name", "");
         if (memoryName == "") 
             dbg.fatal(CALL_INFO,-1,"Param not specified(%s): net_memory_name - name of the memory owned by this directory controller. If you did not intend to connect to memory over the network, please connect memory to the 'memory' port and ignore this parameter.\n", getName().c_str());
@@ -237,6 +258,7 @@ void DirectoryController::handlePacket(SST::Event *event){
         if (memLink) {
             memLink->send(ev);
         } else {
+            // hyo: this code will never be reached in my simulation
             ev->setDst(memoryName);
             network->send(ev);
         }
@@ -376,7 +398,11 @@ bool DirectoryController::clock(SST::Cycle_t cycle){
 
     while (!netMsgQueue.empty() && netMsgQueue.begin()->first <= timestamp) {
         MemEvent * ev = netMsgQueue.begin()->second;
+#ifdef USE_MY_NETWORK
+        myNetworkLink->send(ev);
+#else
         network->send(ev);
+#endif
         netMsgQueue.erase(netMsgQueue.begin());
     }
     while (!memMsgQueue.empty() && memMsgQueue.begin()->first <= timestamp) {
@@ -385,7 +411,10 @@ bool DirectoryController::clock(SST::Cycle_t cycle){
         memMsgQueue.erase(memMsgQueue.begin());
     }
 
-    bool netIdle = network->clock();
+    bool netIdle = false;
+#ifndef USE_MY_NETWORK
+    netIdle = network->clock();
+#endif
     bool empty = workQueue.empty();
 
 #ifdef __SST_DEBUG_OUTPUT__
@@ -554,6 +583,7 @@ void DirectoryController::handleGetX(MemEvent * ev) {
 #endif
                 entry->setState(M);
                 entry->removeSharer(node_name_to_id(ev->getSrc()));
+                if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is removed from sharer - now there are %u sharers\n", ev->getBaseAddr(), ev->getSrc().c_str(), entry->getSharerCount());
                 entry->setOwner(node_name_to_id(ev->getSrc()));
                 respEv = ev->makeResponse();
                 respEv->setSize(cacheLineSize);
@@ -621,6 +651,7 @@ void DirectoryController::issueMemoryRequest(MemEvent * ev, DirEntry * entry) {
     if (memLink) {
         memMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, reqEv));
     } else {
+        // hyo: this code will never be reached in my simulation
         reqEv->setDst(memoryName);
         netMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, reqEv));
     }
@@ -675,6 +706,7 @@ void DirectoryController::handlePutS(MemEvent * ev) {
 
 
     entry->removeSharer(node_name_to_id(ev->getSrc()));
+    if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is removed from sharer - now there are %u sharers\n", ev->getBaseAddr(), ev->getSrc().c_str(), entry->getSharerCount());
     if (mshr->elementIsHit(ev->getBaseAddr(), ev)) mshr->removeElement(ev->getBaseAddr(), ev);
     
     State state = entry->getState();
@@ -872,7 +904,9 @@ void DirectoryController::handleFetchResp(MemEvent * ev) {
                 respEv = reqEv->makeResponse(E);
                 entry->setState(M);
             } else {
+                if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is about to be added to sharer - there are %u sharers\n", reqEv->getBaseAddr(), reqEv->getSrc().c_str(), entry->getSharerCount());
                 entry->addSharer(node_id(reqEv->getSrc()));
+                if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is added to sharer - now there are %u sharers\n", reqEv->getBaseAddr(), reqEv->getSrc().c_str(), entry->getSharerCount());
                 respEv = reqEv->makeResponse();
                 entry->setState(S);
             }
@@ -916,11 +950,13 @@ void DirectoryController::handleFetchXResp(MemEvent * ev) {
     /* Clear previous owner state and writeback block. */
     entry->clearOwner();
     entry->addSharer(node_name_to_id(ev->getSrc()));
+    if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is added to sharer - now there are %u sharers\n", ev->getBaseAddr(), ev->getSrc().c_str(), entry->getSharerCount());
     entry->setState(S);
     if (ev->getDirty()) writebackData(ev);
 
     MemEvent * respEv = reqEv->makeResponse(); 
     entry->addSharer(node_id(reqEv->getSrc()));
+    if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is added to sharer - now there are %u sharers\n", reqEv->getBaseAddr(), reqEv->getSrc().c_str(), entry->getSharerCount());
     
     respEv->setPayload(ev->getPayload());
     profileResponseSent(respEv);
@@ -944,6 +980,7 @@ void DirectoryController::handleAckInv(MemEvent * ev) {
 
 
     entry->removeSharer(node_name_to_id(ev->getSrc()));
+    if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is removed from sharer - now there are %u sharers\n", ev->getBaseAddr(), ev->getSrc().c_str(), entry->getSharerCount());
     if (mshr->elementIsHit(ev->getBaseAddr(), ev)) mshr->removeElement(ev->getBaseAddr(), ev);
     
     State state = entry->getState();
@@ -989,6 +1026,7 @@ void DirectoryController::handleDataResponse(MemEvent * ev) {
                 respEv = reqEv->makeResponse();
                 entry->setState(S);
                 entry->addSharer(node_id(reqEv->getSrc()));
+                if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - %s is added to sharer - now there are %u sharers\n", reqEv->getBaseAddr(), reqEv->getSrc().c_str(), entry->getSharerCount());
             }
             break;
         case IM:
@@ -997,6 +1035,7 @@ void DirectoryController::handleDataResponse(MemEvent * ev) {
             entry->setState(M);
             entry->setOwner(node_id(reqEv->getSrc()));
             entry->clearSharers();  // Case SM: new owner was a sharer
+            if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) dbg.debug(_L5_,"0x%" PRIx64 " - sharer is cleared - now there are %u sharers\n", reqEv->getBaseAddr(), entry->getSharerCount());
             break;
         default:
             dbg.fatal(CALL_INFO,1,"Directory %s received Get Response for addr 0x%" PRIx64 " but state is %s\n", getName().c_str(), ev->getBaseAddr(), StateString[state]);
@@ -1050,7 +1089,11 @@ void DirectoryController::handleMemoryResponse(SST::Event *event){
             noncacheMemReqs.erase(ev->getResponseToID());
             profileResponseSent(ev);
             
+#ifdef USE_MY_NETWORK
+            myNetworkLink->send(ev);
+#else
             network->send(ev);
+#endif
             return;
         }
         dbg.fatal(CALL_INFO, -1, "%s, Error: Received unexpected noncacheable response from memory. Addr = 0x%" PRIx64 ", Cmd = %s. Time = %" PRIu64 "ns\n", 
@@ -1135,6 +1178,7 @@ void DirectoryController::getDirEntryFromMemory(DirEntry * entry) {
     if (memLink) {
         memMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, me));
     } else {
+        // hyo: this code will never be reached in my simulation
         me->setDst(memoryName);
         netMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, me));
     }
@@ -1300,6 +1344,7 @@ void DirectoryController::sendEntryToMemory(DirEntry *entry){
     if (memLink) {
         memMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, me));
     } else {
+        // hyo: this code will never be reached in my simulation
         me->setDst(memoryName);
         netMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, me));
     }
@@ -1324,6 +1369,7 @@ MemEvent::id_type DirectoryController::writebackData(MemEvent *data_event){
     if (memLink) {
         memMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, ev));
     } else {
+        // hyo: this code will never be reached in my simulation
         ev->setDst(memoryName);
         netMsgQueue.insert(std::pair<uint64_t,MemEvent*>(deliveryTime, ev));
     }
@@ -1375,62 +1421,145 @@ void DirectoryController::sendEventToCaches(MemEvent *ev, uint64_t deliveryTime)
 
 
 
-bool DirectoryController::isRequestAddressValid(MemEvent *ev){
+bool DirectoryController::isRequestAddressValid(MemEvent *ev)
+{
+#ifdef USE_MY_NETWORK
     Addr addr = ev->getBaseAddr();
-    if(0 == interleaveSize){
-        return(addr >= addrRangeStart && addr < addrRangeEnd);
-    } else {
-        if(addr < addrRangeStart) return false;
-        if(addr >= addrRangeEnd) return false;
+    if (addr < FGREnd) { // FGR
+        if (addr < addrRangeStart || addrRangeEnd <= addr) return false;
+        if (interleaveSize == 0) return true;
+        uint64_t offset = (addr - addrRangeStart) % interleaveStep;
+        return (offset < interleaveSize);
+    } else { // CGR
+        Addr rangeStart = CGRStart + stackId * pageSize;
+        Addr rangeEnd = CGREnd - (numStack - stackId - 1) * pageSize;
 
-        addr        = addr - addrRangeStart;
+#ifdef __SST_DEBUG_OUTPUT__
+        if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) {
+            dbg.debug(_L10_, "CGRStart = 0x%" PRIx64 " CGREnd = 0x%" PRIx64 " rangeStart = 0x%" PRIx64 " rangeEnd = 0x%" PRIx64 " stackId = %u pageSize = %u\n", 
+                CGRStart, CGREnd, rangeStart, rangeEnd, stackId, pageSize);
+        }
+#endif
+
+        if (addr < rangeStart || rangeEnd <= addr) return false;
+        uint64_t offset = (addr - rangeStart) % (pageSize * numStack);
+        return (offset < pageSize);
+    }
+#else
+    Addr addr = ev->getBaseAddr();
+
+    if (0 == interleaveSize) {
+        return (addr >= addrRangeStart && addr < addrRangeEnd);
+    } else {
+        if (addr < addrRangeStart) return false;
+        if (addr >= addrRangeEnd) return false;
+
+        addr = addr - addrRangeStart;
         Addr offset = addr % interleaveStep;
         
-        if(offset >= interleaveSize) return false;
+        if (offset >= interleaveSize) return false;
         return true;
     }
-
+#endif
 }
 
-Addr DirectoryController::convertAddressFromLocalAddress(Addr addr) {
-    if(interleaveStep > interleaveSize) {
-	dbg.fatal(CALL_INFO, -1, "%s, Error: in address conversion, interleaveStep (%" PRIu32 ") > interleaveSize (%" PRIu32 "). Addr = 0x%" PRIx64 ". Time = %" PRIu64 "\n",
-		getName().c_str(), (uint32_t) interleaveStep, (uint32_t) interleaveSize, addr, getCurrentSimTimeNano());
+Addr DirectoryController::convertAddressFromLocalAddress(Addr addr) 
+{
+#ifdef USE_MY_NETWORK
+    uint64_t ig = ((addr < FGREnd) ? interleaveSize : pageSize); // interleaving granularity
+    uint64_t is = ((addr < FGREnd) ? interleaveStep : (pageSize * numStack)); // interleaving step
+    uint64_t ga = ((addr < FGREnd) ? addrRangeStart : CGRStart); // global address
+
+    if (ig == 0) {
+      ga = addr + addrRangeStart;
+    } else {
+      Addr a = addr - ((addr < FGREnd) ? addrRangeStart : (CGRStart + stackId * pageSize));
+      Addr s = a / ig;
+      Addr o = a % ig;
+
+      ga += ((s * is) + o);
+    }
+
+#ifdef __SST_DEBUG_OUTPUT__
+    if (DEBUG_ALL || addr == DEBUG_ADDR) 
+        dbg.debug(_L10_, "Converted ACTUAL memory address 0x%" PRIx64 " to physical address 0x%" PRIx64 "\n", addr, ga);
+#endif
+
+    return ga;
+#else
+    if (interleaveStep > interleaveSize) {
+        dbg.fatal(CALL_INFO, -1, "%s, Error: in address conversion, interleaveStep (%" PRIu32 ") > interleaveSize (%" PRIu32 "). Addr = 0x%" PRIx64 ". Time = %" PRIu64 "\n", getName().c_str(), (uint32_t) interleaveStep, (uint32_t) interleaveSize, addr, getCurrentSimTimeNano());
     }
 
     Addr res = 0;
-    if(0 == interleaveSize){
+    if (0 == interleaveSize) {
         res = addr + addrRangeStart;
-    }
-    else {
+    } else {
         Addr a 	    = addr;
         Addr step   = a / interleaveSize; 
         Addr offset = a % interleaveSize;
         res = (step * interleaveStep) + offset;
         res = res + addrRangeStart;
-
     }
+
 #ifdef __SST_DEBUG_OUTPUT__
-    if (DEBUG_ALL || addr == DEBUG_ADDR) dbg.debug(_L10_, "Converted ACTUAL memory address 0x%" PRIx64 " to physical address 0x%" PRIx64 "\n", addr, res);
+    if (DEBUG_ALL || addr == DEBUG_ADDR) 
+        dbg.debug(_L10_, "Converted ACTUAL memory address 0x%" PRIx64 " to physical address 0x%" PRIx64 "\n", addr, res);
 #endif
+
     return res;
+#endif
 }
 
-Addr DirectoryController::convertAddressToLocalAddress(Addr addr){
-    Addr res = 0;
-    if(0 == interleaveSize){
-        res = addr - addrRangeStart;
+Addr DirectoryController::convertAddressToLocalAddress(Addr addr)
+{
+#ifdef USE_MY_NETWORK
+    uint64_t ig = ((addr < FGREnd) ? interleaveSize : pageSize); // interleaving granularity
+    uint64_t is = ((addr < FGREnd) ? interleaveStep : (pageSize * numStack)); // interleaving step
+    uint64_t la = ((addr < FGREnd) ? 0 : (stackSize/2)); // local address
+
+#ifdef __SST_DEBUG_OUTPUT__
+    if (DEBUG_ALL || addr == DEBUG_ADDR) 
+        dbg.debug(_L10_, "ig = %" PRIu64 " is = %" PRIu64 " la = 0x%" PRIx64 "\n", ig, is, la); 
+#endif
+
+    if (ig == 0) {
+        la = addr - addrRangeStart;
+    } else {
+        Addr a = addr - ((addr < FGREnd) ? addrRangeStart : (CGRStart + stackId * pageSize));
+        Addr s = a / is;
+        Addr o = a % is;
+
+        dbg.debug(_L10_, "addr = 0x%" PRIx64 " rangeStart = 0x%" PRIx64 " a = 0x%" PRIx64 " s = %" PRIu64 " o = %" PRIu64 "\n", 
+            addr, ((addr < FGREnd) ? addrRangeStart : (CGRStart + stackId * pageSize)), a, s, o); 
+
+        la += ((s * ig) + o);
     }
-    else {
+
+#ifdef __SST_DEBUG_OUTPUT__
+    if (DEBUG_ALL || addr == DEBUG_ADDR) 
+        dbg.debug(_L10_, "Converted physical address 0x%" PRIx64 " to ACTUAL memory address 0x%" PRIx64 "\n", addr, la); 
+#endif
+
+    return la;
+#else
+    Addr res = 0;
+    if (0 == interleaveSize) {
+        res = addr - addrRangeStart;
+    } else {
         Addr a      = addr - addrRangeStart;
         Addr step   = a / interleaveStep;
         Addr offset = a % interleaveStep;
         res         = (step * interleaveSize) + offset;
     }
+
 #ifdef __SST_DEBUG_OUTPUT__
-    if (DEBUG_ALL || addr == DEBUG_ADDR) dbg.debug(_L10_, "Converted physical address 0x%" PRIx64 " to ACTUAL memory address 0x%" PRIx64 "\n", addr, res);
+    if (DEBUG_ALL || addr == DEBUG_ADDR) 
+        dbg.debug(_L10_, "Converted physical address 0x%" PRIx64 " to ACTUAL memory address 0x%" PRIx64 "\n", addr, res);
 #endif
+
     return res;
+#endif
 }
 
 
@@ -1458,9 +1587,38 @@ const char* DirectoryController::printDirectoryEntryStatus(Addr baseAddr){
 
 
 void DirectoryController::init(unsigned int phase){
+#ifdef USE_MY_NETWORK
+    SST::Event *ev;
+    while ((ev = myNetworkLink->recvInitData())) {
+        MemEvent* memEvent = dynamic_cast<MemEvent*>(ev);
+        if (memEvent) {
+            string name = memEvent->getRqstr();
+            if (name.find("l2") == string::npos) {
+                // ignore messages coming from non-LLC caches
+            }
+            else {
+                uint32_t id;
+                map<string, uint32_t>::iterator i = node_lookup.find(name);
+                if (node_lookup.end() == i) {
+                    node_lookup[name] = id = targetCount++;
+                    nodeid_to_name.resize(targetCount);
+                    nodeid_to_name[id] = name;
+                    dbg.debug(_L10_, "DC found peer = %s\n", name.c_str());
+                } else {
+                    id = i->second;
+                }
+
+                memLink->sendInitData(new MemEvent(*memEvent));
+            }
+        }
+    }
+
+    entrySize = (numTargets+1)/8 +1;
+#else
     network->init(phase);
 
     if (!memLink && network->initDataReady() && !network->isValidDestination(memoryName)) {
+        // hyo: this code will never be reached in my simulation
         dbg.fatal(CALL_INFO,-1,"%s, Invalid param: net_memory_name - must name a valid memory component in the system. You specified: %s\n",getName().c_str(), memoryName.c_str());
     }
     /* Pass data on to memory */
@@ -1473,24 +1631,28 @@ void DirectoryController::init(unsigned int phase){
             if (memLink) {
                 memLink->sendInitData(ev);
             } else {
+                // hyo: this code will never be reached in my simulation
                 ev->setDst(memoryName);
                 network->sendInitData(ev);
             }
         }
         else delete ev;
     }
-
+#endif
 }
 
 
 
 void DirectoryController::finish(void){
+#ifndef USE_MY_NETWORK
     network->finish();
+#endif
 }
 
 
 
 void DirectoryController::setup(void){
+#ifndef USE_MY_NETWORK
     network->setup();
 
     const std::vector<MemNIC::PeerInfo_t> &ci = network->getPeerInfo();
@@ -1511,5 +1673,6 @@ void DirectoryController::setup(void){
 
     network->clearPeerInfo();
     entrySize = (numTargets+1)/8 +1;
+#endif
 }
 
