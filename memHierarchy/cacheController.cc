@@ -280,7 +280,7 @@ void Cache::processFetchResp(MemEvent * event, Addr baseAddr) {
 #endif
 
     if (action == DONE) {
-        if (origRequest != NULL) {
+        if (event->getCmd() != AckPut && origRequest != NULL) {
             recordLatency(origRequest);
             mshr_->removeFront(baseAddr);
             delete origRequest;

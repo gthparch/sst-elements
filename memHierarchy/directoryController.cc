@@ -1436,7 +1436,7 @@ bool DirectoryController::isRequestAddressValid(MemEvent *ev)
 
 #ifdef __SST_DEBUG_OUTPUT__
         if (DEBUG_ALL || DEBUG_ADDR == ev->getBaseAddr()) {
-            dbg.debug(_L10_, "CGRStart = 0x%" PRIx64 " CGREnd = 0x%" PRIx64 " rangeStart = 0x%" PRIx64 " rangeEnd = 0x%" PRIx64 " stackId = %u pageSize = %u\n", 
+            dbg.debug(_L10_, "CGRStart = 0x%" PRIx64 " CGREnd = 0x%" PRIx64 " rangeStart = 0x%" PRIx64 " rangeEnd = 0x%" PRIx64 " stackId = %u pageSize = %" PRIu64 "\n", 
                 CGRStart, CGREnd, rangeStart, rangeEnd, stackId, pageSize);
         }
 #endif

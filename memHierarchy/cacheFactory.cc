@@ -172,6 +172,7 @@ Cache* Cache::cacheFactory(ComponentId_t id, Params &params) {
 Cache::Cache(ComponentId_t id, Params &params, CacheConfig config) : Component(id) {
     cf_     = config;
     d_      = cf_.dbg_;
+    d_->setPrefix(string(this->Component::getName() + " --->  "));
     d_->debug(_INFO_,"--------------------------- Initializing [Cache]: %s... \n", this->Component::getName().c_str());
     pMembers();
     errorChecking();
