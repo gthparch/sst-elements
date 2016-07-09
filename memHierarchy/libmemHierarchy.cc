@@ -75,6 +75,8 @@ static const ElementInfoParam cache_params[] = {
     {"L1",                      "Required, bool - Required for L1s, specifies whether cache is an L1. Options: 0[not L1], 1[L1]", "false"},
     {"LL",                      "Required, bool - Required for LLCs without a directory below - indicates LLC is the lowest-level coherence entity. Options: 0[not LL entity], 1[LL entity]", "false"},
     /* Not required */
+    {"L2",                      "Optional, bool - specifies whether cache is an L2 - for stats collection. Options: 0[not L2], 1[L2]", "false"},
+    {"L3",                      "Optional, bool - specifies whether cache is an L3 - for stats collection. Options: 0[not L3], 1[L3]", "false"},
     {"cache_line_size",         "Optional, int - Size of a cache line (aka cache block) in bytes.", "64"},
     {"hash_function",           "Optional, int - 0 - none (default), 1 - linear, 2 - XOR", "0"},
     {"coherence_protocol",      "Optional, string - Coherence protocol. Options: MESI, MSI, NONE", "MESI"},

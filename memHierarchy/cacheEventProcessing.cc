@@ -91,6 +91,24 @@ void Cache::profileEvent(MemEvent* event, Command cmd, bool replay, bool canStal
                 return; // profile later, this event is getting NACKed
         }
     }
+
+    //set memFlags (higher bits) when cache hit happens
+    // (memFlags lower 8bits are reserved for hmc flags)
+    uint32_t memInfo = (event->getMemFlags())>>8;
+    uint32_t hmcInfo = (event->getMemFlags()) & 0xff;
+    if (cacheHit ==0 && (cmd == GetS || cmd == GetX || cmd == GetSEx) && memInfo == 0)
+    {
+        if (cf_.L1_)
+            memInfo = 1;
+        else if (cf_.L2_)
+            memInfo = 2;
+        else if (cf_.L3_)
+            memInfo = 3;
+        
+        uint32_t memFlags = (memInfo<<8)|(hmcInfo);
+        event->setMemFlags(memFlags);
+    }
+
 // #ifdef USE_VAULTSIM_HMC
 //     if (!replay)
 //     {

@@ -152,7 +152,7 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         transaction_c transaction (isWrite, new_addr & ~((uint64_t)CacheLineSize-1));
 
         #ifdef USE_VAULTSIM_HMC
-        uint32_t HMCTypeEvent = event->getMemFlags();
+        uint32_t HMCTypeEvent = (event->getMemFlags()) & 0x00ff; //only lower 8bits are used for hmc flags
         transaction.setHmcOpType(HMCTypeEvent);
         if (HMCTypeEvent == HMC_NONE || HMCTypeEvent == HMC_CANDIDATE) {
             transaction.resetAtomic();

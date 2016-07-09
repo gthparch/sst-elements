@@ -271,6 +271,8 @@ private:
         bool allNoncacheableRequests_;
         SimTime_t maxWaitTime_;
         string type_;
+        bool L2_;
+        bool L3_;
     };
     
     CacheConfig             cf_;

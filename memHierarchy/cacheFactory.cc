@@ -89,7 +89,9 @@ Cache* Cache::cacheFactory(ComponentId_t id, Params &params) {
     string dirReplacement       = params.find<std::string>("noninclusive_directory_repl", "LRU");
     int dirAssociativity        = params.find<int>("noninclusive_directory_associativity", 1);
     int dirNumEntries           = params.find<int>("noninclusive_directory_entries", 0);
-    
+    bool L2                     = params.find<bool>("L2", false);
+    bool L3                     = params.find<bool>("L3", false);
+
     /* Convert all strings to lower case */
     boost::algorithm::to_lower(coherenceProtocol);
     boost::algorithm::to_lower(replacement);
@@ -184,7 +186,7 @@ Cache* Cache::cacheFactory(ComponentId_t id, Params &params) {
     CacheConfig config = {frequency, cacheArray, dirArray, protocol, dbg, replManager, numLines,
 	static_cast<uint>(lineSize),
 	static_cast<uint>(mshrSize), L1,
-	noncacheableRequests, maxWaitTime, cacheType};
+	noncacheableRequests, maxWaitTime, cacheType, L2, L3};
     return new Cache(id, params, config);
 }
 
