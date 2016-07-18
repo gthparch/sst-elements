@@ -17,8 +17,6 @@ using namespace SST::MemHierarchy;
 #define likely(x) __builtin_expect ((x), 1)
 #define unlikely(x) __builtin_expect ((x), 0)
 
-//#define ENABLE_ADDRESS_CONVERSION
-
 MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
 {
   currentCycle = 0;
@@ -51,10 +49,10 @@ MyNetwork::MyNetwork(ComponentId_t id, Params& params) : Component(id)
     requestQueues.push_back(list<Transaction>());
     responseQueues.push_back(list<Transaction>());
 
-#ifdef ENABLE_ADDRESS_CONVERSION
-    localToGlobalAddressMap.push_back(map<uint64_t, uint64_t>());
-    globalToLocalAddressMap.push_back(map<uint64_t, uint64_t>());
-#endif
+    if (addressTranslationEnabled) {
+      localToGlobalAddressMap.push_back(map<uint64_t, uint64_t>());
+      globalToLocalAddressMap.push_back(map<uint64_t, uint64_t>());
+    }
   }
 
   // PIM Mode
@@ -321,12 +319,11 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     addToResponseQueue(srcStackIdx, t);
 
     uint64_t addr = UINT64_MAX;
-#ifdef ENABLE_ADDRESS_CONVERSION
     // statistics
-    addr = localToGlobalAddressMap[srcStackIdx][me->getAddr()];
-#else
-    addr = me->getAddr();
-#endif
+    if (addressTranslationEnabled)
+      addr = localToGlobalAddressMap[srcStackIdx][me->getAddr()];
+    else
+      addr = me->getAddr();
 
     uint64_t roundTripTime = 0;
     if (localAccess) {
@@ -359,12 +356,12 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     // statistics
     responses[srcStackIdx]++;
 
-#ifdef ENABLE_ADDRESS_CONVERSION
-    uint64_t localAddress = me->getAddr();
-    uint64_t addr = convertToGlobalAddress(localAddress, getMemoryCompInfoForFGR(srcLinkId)->getRangeStart(), false);
-#else
-    uint64_t addr = me->getAddr();
-#endif
+    uint64_t addr = 0;
+    if (addressTranslationEnabled) {
+      uint64_t localAddress = me->getAddr();
+      addr = convertToGlobalAddress(localAddress, getMemoryCompInfoForFGR(srcLinkId)->getRangeStart(), false);
+    } else
+      addr = me->getAddr();
 
     uint64_t roundTripTime = currentCycle + latency - latencyMap[addr];
     latencies += roundTripTime;
@@ -385,12 +382,10 @@ void MyNetwork::sendRequest(MemEvent* me)
   bool isFGR = getMemoryCompInfoForFGR(dstLinkId)->contains(me->getAddr());
   uint64_t addr = UINT64_MAX;
   if (isFGR) {
-#ifdef ENABLE_ADDRESS_CONVERSION
-    addr = convertToLocalAddress(me->getAddr(), 
-        getMemoryCompInfoForFGR(dstLinkId)->getRangeStart(), false);
-#else
-    addr = me->getAddr();
-#endif
+    if (addressTranslationEnabled)
+      addr = convertToLocalAddress(me->getAddr(), getMemoryCompInfoForFGR(dstLinkId)->getRangeStart(), false);
+    else
+      addr = me->getAddr();
     forwardEvent->setAddr(addr);
     forwardEvent->setBaseAddr(toBaseAddr(addr));
     forwardEvent->setVirtualAddress(me->getAddr()); // for debugging
@@ -400,34 +395,32 @@ void MyNetwork::sendRequest(MemEvent* me)
       dbg.debug(_L7_,"CGR %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 "\n", 
           CommandString[me->getCmd()], me->getAddr(), currentCycle);
     }
-#ifdef ENABLE_ADDRESS_CONVERSION
-    addr = convertToLocalAddress(me->getAddr(), 
-        getMemoryCompInfoForCGR(dstLinkId)->getRangeStart(), true);
-#else
-    addr = me->getAddr();
-#endif
+    if (addressTranslationEnabled)
+      addr = convertToLocalAddress(me->getAddr(), getMemoryCompInfoForCGR(dstLinkId)->getRangeStart(), true);
+    else
+      addr = me->getAddr();
     forwardEvent->setAddr(addr);
     forwardEvent->setBaseAddr(toBaseAddr(addr));
     forwardEvent->setVirtualAddress(me->getAddr()); // for debugging
   }
 
-#ifdef ENABLE_ADDRESS_CONVERSION
-  globalToLocalAddressMap[dstStackIdx][me->getAddr()] = forwardEvent->getAddr();
-  localToGlobalAddressMap[dstStackIdx][forwardEvent->getAddr()] = me->getAddr();
+  if (addressTranslationEnabled) {
+    globalToLocalAddressMap[dstStackIdx][me->getAddr()] = forwardEvent->getAddr();
+    localToGlobalAddressMap[dstStackIdx][forwardEvent->getAddr()] = me->getAddr();
 
-  outstandingRequests[me->getAddr()] += 1;
+    outstandingRequests[me->getAddr()] += 1;
 
-  dbg.debug(_L7_,"globalToLocalAddressMap[%u] inserting flat:0x%" PRIx64 " local:0x%" PRIx64 "\n", 
-      dstStackIdx, me->getAddr(), forwardEvent->getAddr());
-  dbg.debug(_L7_,"localToGlobalAddressMap[%u] inserting local:0x%" PRIx64 " flat:0x%" PRIx64 "\n", 
-      dstStackIdx, forwardEvent->getAddr(), me->getAddr());
-  dbg.debug(_L7_,"globalToLocalAddressMap [%lu][%lu][%lu][%lu]\n",
-      globalToLocalAddressMap[0].size(), globalToLocalAddressMap[1].size(),
-      globalToLocalAddressMap[2].size(), globalToLocalAddressMap[3].size());
-  dbg.debug(_L7_,"localToGlobalAddressMap [%lu][%lu][%lu][%lu]\n",
-      localToGlobalAddressMap[0].size(), localToGlobalAddressMap[1].size(),
-      localToGlobalAddressMap[2].size(), localToGlobalAddressMap[3].size());
-#endif
+    dbg.debug(_L7_,"globalToLocalAddressMap[%u] inserting flat:0x%" PRIx64 " local:0x%" PRIx64 "\n", 
+        dstStackIdx, me->getAddr(), forwardEvent->getAddr());
+    dbg.debug(_L7_,"localToGlobalAddressMap[%u] inserting local:0x%" PRIx64 " flat:0x%" PRIx64 "\n", 
+        dstStackIdx, forwardEvent->getAddr(), me->getAddr());
+    dbg.debug(_L7_,"globalToLocalAddressMap [%lu][%lu][%lu][%lu]\n",
+        globalToLocalAddressMap[0].size(), globalToLocalAddressMap[1].size(),
+        globalToLocalAddressMap[2].size(), globalToLocalAddressMap[3].size());
+    dbg.debug(_L7_,"localToGlobalAddressMap [%lu][%lu][%lu][%lu]\n",
+        localToGlobalAddressMap[0].size(), localToGlobalAddressMap[1].size(),
+        localToGlobalAddressMap[2].size(), localToGlobalAddressMap[3].size());
+  }
 
   if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
     dbg.debug(_L3_,"SEND %s for 0x%" PRIx64 " at currentCycle: %" PRIu64 " from %u to %u\n", 
@@ -452,33 +445,32 @@ void MyNetwork::sendResponse(MemEvent* me)
 
   MemEvent* forwardEvent = new MemEvent(*me);
   uint64_t addr = UINT64_MAX;
-#ifdef ENABLE_ADDRESS_CONVERSION
-  addr = localToGlobalAddressMap[srcStackIdx][me->getAddr()];
-#else
-  addr = me->getAddr();
-#endif
+  if (addressTranslationEnabled)
+    addr = localToGlobalAddressMap[srcStackIdx][me->getAddr()];
+  else
+    addr = me->getAddr();
   forwardEvent->setAddr(addr);
   forwardEvent->setBaseAddr(toBaseAddr(addr));
 
-#ifdef ENABLE_ADDRESS_CONVERSION
-  dbg.debug(_L7_,"localToGlobalAddressMap[%u] erasing local:0x%" PRIx64 " flat:0x%" PRIx64 "\n", 
-      srcStackIdx, me->getAddr(), forwardEvent->getAddr());
-  dbg.debug(_L7_,"globalToLocalAddressMap[%u] erasing flat:0x%" PRIx64 " local:0x%" PRIx64 "\n", 
-      srcStackIdx, forwardEvent->getAddr(), me->getAddr());
+  if (addressTranslationEnabled) {
+    dbg.debug(_L7_,"localToGlobalAddressMap[%u] erasing local:0x%" PRIx64 " flat:0x%" PRIx64 "\n", 
+        srcStackIdx, me->getAddr(), forwardEvent->getAddr());
+    dbg.debug(_L7_,"globalToLocalAddressMap[%u] erasing flat:0x%" PRIx64 " local:0x%" PRIx64 "\n", 
+        srcStackIdx, forwardEvent->getAddr(), me->getAddr());
 
-  outstandingRequests[addr] -= 1;
+    outstandingRequests[addr] -= 1;
 
-  if (outstandingRequests[addr] == 0) {
-    localToGlobalAddressMap[srcStackIdx].erase(localToGlobalAddressMap[srcStackIdx].find(me->getAddr()));
-    globalToLocalAddressMap[srcStackIdx].erase(globalToLocalAddressMap[srcStackIdx].find(addr));
-    dbg.debug(_L7_,"globalToLocalAddressMap [%lu][%lu][%lu][%lu]\n",
-        globalToLocalAddressMap[0].size(), globalToLocalAddressMap[1].size(),
-        globalToLocalAddressMap[2].size(), globalToLocalAddressMap[3].size());
-    dbg.debug(_L7_,"localToGlobalAddressMap [%lu][%lu][%lu][%lu]\n",
-        localToGlobalAddressMap[0].size(), localToGlobalAddressMap[1].size(),
-        localToGlobalAddressMap[2].size(), localToGlobalAddressMap[3].size());
+    if (outstandingRequests[addr] == 0) {
+      localToGlobalAddressMap[srcStackIdx].erase(localToGlobalAddressMap[srcStackIdx].find(me->getAddr()));
+      globalToLocalAddressMap[srcStackIdx].erase(globalToLocalAddressMap[srcStackIdx].find(addr));
+      dbg.debug(_L7_,"globalToLocalAddressMap [%lu][%lu][%lu][%lu]\n",
+          globalToLocalAddressMap[0].size(), globalToLocalAddressMap[1].size(),
+          globalToLocalAddressMap[2].size(), globalToLocalAddressMap[3].size());
+      dbg.debug(_L7_,"localToGlobalAddressMap [%lu][%lu][%lu][%lu]\n",
+          localToGlobalAddressMap[0].size(), localToGlobalAddressMap[1].size(),
+          localToGlobalAddressMap[2].size(), localToGlobalAddressMap[3].size());
+    }
   }
-#endif
 
   if (getMemoryCompInfoForCGR(srcLinkId)->contains(addr)) {
     if (DEBUG_ALL || DEBUG_ADDR == forwardEvent->getBaseAddr()) {
@@ -620,6 +612,8 @@ void MyNetwork::configureParameters(SST::Params& params)
     DEBUG_ADDR = (Addr)debugAddr;
     DEBUG_ALL = false;
   }
+
+  addressTranslationEnabled = params.find_integer("enable_address_translaction", 0);
 
   packetSize = params.find_integer("packet_size", 64);
 

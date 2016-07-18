@@ -191,6 +191,8 @@ private:
   map<LinkId_t, unsigned> portToStackMap;
   map<LinkId_t, SST::Link*> linkIdToLinkMap;
 
+  bool addressTranslationEnabled;
+
   unsigned numCore;
   unsigned numStack;
 
