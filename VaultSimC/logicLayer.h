@@ -1,10 +1,10 @@
 // Copyright 2009-2015 Sandia Corporation. Under the terms
 // of Contract DE-AC04-94AL85000 with Sandia Corporation, the U.S.
 // Government retains certain rights in this software.
-// 
+//
 // Copyright (c) 2009-2015, Sandia Corporation
 // All rights reserved.
-// 
+//
 // This file is part of the SST software package. For license
 // information, see the LICENSE file in the top level directory of the
 // distribution.
@@ -48,7 +48,7 @@ private:
     #endif
 
 public:
-    /** 
+    /**
      * Constructor
      */
     logicLayer(ComponentId_t id, Params& params);
@@ -59,13 +59,13 @@ public:
      */
     void finish();
 
-private: 
-    /** 
+private:
+    /**
      * Constructor
      */
     logicLayer(const logicLayer& c);
 
-    /** 
+    /**
      * Step call for LogicLayer
      */
     bool clock(Cycle_t);
@@ -83,11 +83,11 @@ private:
         #define FILED1_LENGTH 45
         #define FILED2_LENGTH 20
         #define FILED3_LENGTH 30
-    
+
         ofs.setf(ios::left, ios::adjustfield);
         string capitalized_suffixed_name = boost::to_upper_copy(name + "_" + suffix);
         ofs << setw(FILED1_LENGTH) << capitalized_suffixed_name;
-    
+
         ofs.setf(ios::right, ios::adjustfield);
         ofs << setw(FILED2_LENGTH) << count << setw(FILED3_LENGTH) << count << endl << endl;
     }
@@ -134,23 +134,23 @@ private:
     unsigned int LL_MASK;
 
     // Transaction Support
-    #ifdef USE_VAULTSIM_HMC
-    tIdQueue_t tIdQueue;
-    unordered_map<uint64_t, uint64_t> transSize;
-    queue<uint64_t> transReadyQueue;
-    queue<uint64_t> transRetireQueue;
-    set<uint64_t> transConflictQueue;
-    unsigned activeTransactionsLimit;       //FIXME: Not used now
-    tIdQueue_t tIdReadyForRetire;
-    unordered_set<uint64_t> activeTransactions;
-    #endif
+    // #ifdef USE_VAULTSIM_HMC
+    // tIdQueue_t tIdQueue;
+    // unordered_map<uint64_t, uint64_t> transSize;
+    // queue<uint64_t> transReadyQueue;
+    // queue<uint64_t> transRetireQueue;
+    // set<uint64_t> transConflictQueue;
+    // unsigned activeTransactionsLimit;       //FIXME: Not used now
+    // tIdQueue_t tIdReadyForRetire;
+    // unordered_set<uint64_t> activeTransactions;
+    // #endif
 
     // Statistics
     Statistic<uint64_t>* memOpsProcessed;
     Statistic<uint64_t>* HMCCandidateProcessed;
     Statistic<uint64_t>* HMCOpsProcessed;
     Statistic<uint64_t>* HMCTransOpsProcessed;
-    
+
     Statistic<uint64_t>* reqUsedToCpu[2];
     Statistic<uint64_t>* reqUsedToMem[2];
 
