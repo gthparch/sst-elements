@@ -102,6 +102,7 @@ private:
     int numVaults;
     int numVaults2;
 
+    // BW control
     int reqLimitPerWindow;
     int reqLimitWindowSize;
     int currentLimitReqBudgetCPU[2];    // {recv, send}
@@ -126,9 +127,12 @@ private:
     //Quad support
     unsigned int currentSendID;
 
-    // cacheLineSize
+    // cacheLineSize (For Main Memroy accesses)
     uint64_t CacheLineSize;             // it is used to determine VaultIDs
     unsigned CacheLineSizeLog2;         // bits of CacheLineSize
+
+    // cacheSim Vars
+    bool cacheSim;
 
     // Multi logicLayer support (FIXME)
     unsigned int LL_MASK;

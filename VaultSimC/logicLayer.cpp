@@ -135,12 +135,21 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
     else
         out.output("*LogicLayer%d: Connected %d Vaults\n", llID, numVaults);
 
-
     #ifdef USE_VAULTSIM_HMC
     out.output("*LogicLayer%d: Flag USE_VAULTSIM_HMC set\n", llID);
     #endif
 
     dbg.debug(_INFO_, "Made LogicLayer %d toMem:%p toCPU:%p\n", llID, toMem, toCPU);
+
+    // ** -----cacheSim START-----**//
+    // cacheSim for VaultSim
+    bool cacheSim = params.find<bool>("mem_cache_simulation", 0);
+    if (cacheSim) {
+
+    }
+
+
+    // ** -----cacheSim END-----**//
 
     // clock
     std::string frequency;
@@ -212,6 +221,8 @@ bool logicLayer::clock(Cycle_t currentCycle)
                 outChans[sendID]->send(event);
                 dbg.debug(_L4_, "LogicLayer%d sends %p to vault%u @ %" PRIu64 "\n", llID, (void*)event->getAddr(), sendID, currentCycle);
             }
+            //if we have cache, send access to it
+            if (cacheSim);
         }
         // This event is not for this LogicLayer
         else {

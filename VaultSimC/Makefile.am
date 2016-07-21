@@ -2,14 +2,16 @@
 #
 #
 
-AM_CPPFLAGS = \ 
-            $(HMC_FLAG) \ 
+AM_CPPFLAGS = \
+            $(HMC_FLAG) \
             -g
 
 compdir = $(pkglibdir)
 comp_LTLIBRARIES = libVaultSimC.la
 
 libVaultSimC_la_SOURCES = \
+    cacheSim.cpp \
+    cacheSim.h \
     logicLayer.h \
     logicLayer.cpp \
     quad.h \
@@ -21,9 +23,9 @@ libVaultSimC_la_SOURCES = \
     globals.h \
     libVaultSimGen.cpp
 
-libVaultSimC_la_CPPFLAGS = $(BOOST_CPPFLAGS) $(MPI_CPPFLAGS) $(HMC_FLAG) 
+libVaultSimC_la_CPPFLAGS = $(BOOST_CPPFLAGS) $(MPI_CPPFLAGS) $(HMC_FLAG)
 libVaultSimC_la_LDFLAGS = -module -avoid-version
-libVaultSimC_la_LIBADD = 
+libVaultSimC_la_LIBADD =
 
 if HAVE_DRAMSIM
 libVaultSimC_la_CPPFLAGS += $(DRAMSIM_CPPFLAGS) -DHAVE_LIBDRAMSIM
