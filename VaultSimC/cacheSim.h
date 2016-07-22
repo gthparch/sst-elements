@@ -3,22 +3,25 @@
 
 #include <cinttypes>
 
-//Ramyad
 #include <cmath>
 #include <iostream>
 #include <iomanip>
-using namespace std;
 #include <bitset>
-//End
+#include <cstring>
+
+#include <sst/elements/memHierarchy/memEvent.h>
+
+using namespace std;
 
 class cacheSim {
 private:
     struct cache_stats_t;
 
 public:
-    void cache_access(char rw, uint64_t address, cache_stats_t* p_stats);
-    void setup_cache(uint64_t c, uint64_t b, uint64_t s, uint64_t v, uint64_t k);
-    void complete_cache(cache_stats_t *p_stats);
+    void setupCache(uint64_t c, uint64_t b, uint64_t s, uint64_t v, uint64_t k);
+    void cacheAccess(char rw, uint64_t address);
+    void completeCache();
+    void printStatistics();
 
 private:
     struct cache_stats_t {
@@ -58,18 +61,24 @@ private:
         uint64_t bytes_prefetched;
     };
 
-private:
+public:
+    cache_stats_t* p_stats;
 
-    static const uint64_t DEFAULT_C = 15;   /* 32KB Cache */
-    static const uint64_t DEFAULT_B = 5;    /* 32-byte blocks */
-    static const uint64_t DEFAULT_S = 3;    /* 8 blocks per set */
-    static const uint64_t DEFAULT_V = 4;    /* 4 victim blocks */
-    static const uint64_t DEFAULT_K = 2;	/* 2 prefetch distance */
 
+public:
     /** Argument to cache_access rw. Indicates a load */
     static const char     READ = 'r';
     /** Argument to cache_access rw. Indicates a store */
     static const char     WRITE = 'w';
+
+
+private:
+
+    static const uint64_t DEFAULT_C = 15;   /* 32KB Cache */
+    static const uint64_t DEFAULT_B = 6;    /* 64-byte blocks */
+    static const uint64_t DEFAULT_S = 3;    /* 8 blocks per set */
+    static const uint64_t DEFAULT_V = 0;    /* 0 victim blocks */
+    static const uint64_t DEFAULT_K = 0;	/* 0 prefetch distance */
 
 
     unsigned int offset_bit;

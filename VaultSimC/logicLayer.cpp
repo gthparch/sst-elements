@@ -17,9 +17,6 @@
 
 #include "logicLayer.h"
 
-using namespace SST::Interfaces;
-using namespace SST::MemHierarchy;
-
 logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent( id )
 {
     // Debug and Output Initialization
@@ -143,9 +140,28 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
 
     // ** -----cacheSim START-----**//
     // cacheSim for VaultSim
-    bool cacheSim = params.find<bool>("mem_cache_simulation", 0);
-    if (cacheSim) {
+    isCacheSimEn = params.find<bool>("mem_cache_simulation", 0);
+    if (isCacheSimEn) {
+        cacheSimulator = new cacheSim;
 
+        uint64_t cacheC; /* Size in bytes is 2^C */
+        uint64_t cacheB; /* Bytes per block is 2^B */
+        uint64_t cacheS; /* Blocks per set is 2^S */
+        uint64_t cacheV; /* Blocks in victim cache */
+        uint64_t cacheK; /* Preferch distance */
+
+        cacheC = params.find<uint64_t>("mem_cache_size", 15);
+        cacheB = params.find<uint64_t>("mem_cache_block_size", 6);
+        cacheS = params.find<uint64_t>("mem_cache_blocks_per_set", 3);
+        cacheV = params.find<uint64_t>("mem_cache_blocks_in_victim", 0);
+        cacheK = params.find<uint64_t>("mem_cache_prefetch_distance", 0);
+
+        // Setup the cache
+        cacheSimulator->setupCache(cacheC, cacheB, cacheS, cacheV, cacheK);
+
+        // Debug info`
+        out.output("*LogicLayer%d: Made Memory Cache C:%" PRIu64 " B:%" PRIu64 " S:%" PRIu64 " V:%" PRIu64 " K:%" PRIu64 "\n", \
+                    llID, cacheC, cacheB, cacheS, cacheV, cacheK);
     }
 
 
@@ -177,6 +193,12 @@ void logicLayer::finish()
     //Print Statistics
     if (statsFormat == 1)
         printStatsForMacSim();
+    if (isCacheSimEn) {
+        dbg.debug(_L4_, "Memory Cache done\n");
+        cacheSimulator->completeCache();
+        //cacheSimulator->printStatistics();
+        printCacheStatsForMacSim();
+    }
 }
 
 bool logicLayer::clock(Cycle_t currentCycle)
@@ -222,7 +244,14 @@ bool logicLayer::clock(Cycle_t currentCycle)
                 dbg.debug(_L4_, "LogicLayer%d sends %p to vault%u @ %" PRIu64 "\n", llID, (void*)event->getAddr(), sendID, currentCycle);
             }
             //if we have cache, send access to it
-            if (cacheSim);
+            if (isCacheSimEn) {
+                #ifdef USE_VAULTSIM_HMC
+                if (HMCTypeEvent != HMC_NONE)
+                    accessCache(event);
+                #else
+                accessCache(event);
+                #endif
+            }
         }
         // This event is not for this LogicLayer
         else {
@@ -293,7 +322,7 @@ bool logicLayer::clock(Cycle_t currentCycle)
 
     // Check for limits
     if (currentLimitReqBudgetCPU[0]==0 || currentLimitReqBudgetCPU[1]==0 || currentLimitReqBudgetMem[0]==0 || currentLimitReqBudgetMem[1]==0) {
-        dbg.output(CALL_INFO, "logicLayer%d request budget saturated (%d %d %d %d) in window number %d @cycle=%lu\n",\
+        dbg.debug(_L4_, "logicLayer%d request budget saturated (%d %d %d %d) in window number %d @cycle=%lu\n",\
          llID, currentLimitReqBudgetCPU[0], currentLimitReqBudgetCPU[1],  currentLimitReqBudgetMem[0],  currentLimitReqBudgetMem[1], \
          currentLimitWindowNum, currentCycle);
     }
@@ -311,6 +340,35 @@ bool logicLayer::clock(Cycle_t currentCycle)
     }
 
     return false;
+}
+
+
+/*
+ * cacheSim Functions
+ */
+
+void logicLayer::accessCache(MemEvent *event)
+{
+    bool isWrite = false;
+
+    #ifndef USE_VAULTSIM_HMC
+    switch(event->getCmd()) {
+    case SST::MemHierarchy::GetS:
+        isWrite = false;
+        break;
+    case SST::MemHierarchy::GetSEx:
+    case SST::MemHierarchy::GetX:
+        isWrite = true;
+        break;
+    default:
+        break;
+    }
+    #endif
+
+    char rw = isWrite ? cacheSim::WRITE : cacheSim::READ;
+    cacheSimulator->cacheAccess(rw, event->getAddr());
+
+    dbg.debug(_L4_, "LogicLayer%d cache access for %p\n", llID, (void*)event->getAddr());
 }
 
 
@@ -359,4 +417,40 @@ void logicLayer::printStatsForMacSim() {
     writeTo(ofs, suffix, string("req_send_to_Mem"),   reqUsedToMem[1]->getCollectionCount());
     ofs << "\n";
     writeTo(ofs, suffix, string("total_HMC_candidate_ops"),   HMCCandidateProcessed->getCollectionCount());
+}
+
+/*
+ *  Print Macsim style output in a file for cache
+ **/
+
+void logicLayer::printCacheStatsForMacSim() {
+    string suffix = "logiclayer_cache_" + to_string(llID);
+    stringstream ss;
+    ss << suffix.c_str() << ".stat.out";
+    string filename = ss.str();
+
+    ofstream ofs;
+    ofs.exceptions(std::ofstream::eofbit | std::ofstream::failbit | std::ofstream::badbit);
+    ofs.open(filename.c_str(), std::ios_base::out);
+
+    writeTo(ofs, suffix, string("accesses"), cacheSimulator->p_stats->accesses);
+    writeTo(ofs, suffix, string("reads"), cacheSimulator->p_stats->reads);
+    writeTo(ofs, suffix, string("read_misses"), cacheSimulator->p_stats->read_misses);
+    writeTo(ofs, suffix, string("read_misses_combined"), cacheSimulator->p_stats->read_misses_combined);
+    ofs << "\n";
+    writeTo(ofs, suffix, string("writes"), cacheSimulator->p_stats->writes);
+    writeTo(ofs, suffix, string("write_misses"), cacheSimulator->p_stats->write_misses);
+    writeTo(ofs, suffix, string("write_misses_combined"), cacheSimulator->p_stats->write_misses_combined);
+    ofs << "\n";
+    writeTo(ofs, suffix, string("misses"), cacheSimulator->p_stats->misses);
+    writeTo(ofs, suffix, string("write_backs"), cacheSimulator->p_stats->write_backs);
+    ofs << "\n";
+    writeTo(ofs, suffix, string("miss_rate"), cacheSimulator->p_stats->miss_rate);
+    writeTo(ofs, suffix, string("avg_access_time"), cacheSimulator->p_stats->avg_access_time);
+    writeTo(ofs, suffix, string("hit_time"), cacheSimulator->p_stats->hit_time);
+    writeTo(ofs, suffix, string("miss_penalty"), cacheSimulator->p_stats->miss_penalty);
+    ofs << "\n";
+    writeTo(ofs, suffix, string("vc_misses"), cacheSimulator->p_stats->vc_misses);
+    writeTo(ofs, suffix, string("prefetched_blocks"), cacheSimulator->p_stats->prefetched_blocks);
+    writeTo(ofs, suffix, string("useful_prefetches"), cacheSimulator->p_stats->useful_prefetches);
 }

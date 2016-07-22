@@ -7,7 +7,7 @@
  * @v The number of blocks in the victim cache is 2^V
  * @k The prefetch distance is K
  */
-void cacheSim::setup_cache(uint64_t c, uint64_t b, uint64_t s, uint64_t v, uint64_t k) {
+void cacheSim::setupCache(uint64_t c, uint64_t b, uint64_t s, uint64_t v, uint64_t k) {
 	//global cache setting
 	offset_bit = b;
 	set_bit = s;
@@ -65,6 +65,11 @@ void cacheSim::setup_cache(uint64_t c, uint64_t b, uint64_t s, uint64_t v, uint6
 	num_block_in_set_used = new unsigned int [num_set_in_cache];
 	for (unsigned int i=0; i<num_set_in_cache; i++)
 		num_block_in_set_used[i] = 0;
+ 	//memset(num_block_in_set_used, 0, sizeof(unsigned int)*num_set_in_cache);
+
+	//stats reset
+	p_stats = new cache_stats_t;
+	memset(p_stats, 0, sizeof(cache_stats_t));
 
 	return;
 }
@@ -77,7 +82,7 @@ void cacheSim::setup_cache(uint64_t c, uint64_t b, uint64_t s, uint64_t v, uint6
  * @address  The target memory address
  * @p_stats Pointer to the statistics structure
  */
-void cacheSim::cache_access(char rw, uint64_t address, cache_stats_t* p_stats) {
+void cacheSim::cacheAccess(char rw, uint64_t address) {
 	p_stats->accesses++;
 	if (rw == READ) p_stats->reads++;
 	if (rw == WRITE) p_stats->writes++;
@@ -114,7 +119,7 @@ void cacheSim::cache_access(char rw, uint64_t address, cache_stats_t* p_stats) {
 	}
 	//Check VC if miss
 	bool VC_MISS = true;
-	if (MISS) {	//remove "&& VC_size != 0" based on official results!
+	if (MISS && VC_size != 0) {	//remove "&& VC_size != 0" based on official results! (Fall2014) -> returned it summer 2016
 		for (unsigned int i =0; i<num_block_in_VC_used; i++)
 			if (VC[i][0] == index && VC[i][1] == tag) {
 				VC_MISS = false;
@@ -557,7 +562,7 @@ void cacheSim::cache_access(char rw, uint64_t address, cache_stats_t* p_stats) {
  *
  * @p_stats Pointer to the statistics structure
  */
-void cacheSim::complete_cache(cache_stats_t *p_stats) {
+void cacheSim::completeCache() {
 	p_stats->read_misses_combined = p_stats->read_misses - p_stats->VC_hit_read;
 	p_stats->write_misses_combined = p_stats->write_misses - p_stats->VC_hit_write;
 
@@ -582,3 +587,45 @@ void cacheSim::complete_cache(cache_stats_t *p_stats) {
 	p_stats->bytes_transferred = p_stats->bytes_written + p_stats->bytes_read
 														+ p_stats->bytes_prefetched;
 }
+
+/**
+ * Print stats
+ */
+ void cacheSim::printStatistics() {
+		printf("Cache Statistics\n");
+		printf("Accesses: %" PRIu64 "\n", p_stats->accesses);
+		printf("Reads: %" PRIu64 "\n", p_stats->reads);
+		printf("Read misses: %" PRIu64 "\n", p_stats->read_misses);
+		printf("Read misses combined: %" PRIu64 "\n", p_stats->read_misses_combined);
+		printf("Writes: %" PRIu64 "\n", p_stats->writes);
+		printf("Write misses: %" PRIu64 "\n", p_stats->write_misses);
+		printf("Write misses combined: %" PRIu64 "\n", p_stats->write_misses_combined);
+		printf("Misses: %" PRIu64 "\n", p_stats->misses);
+		printf("Writebacks: %" PRIu64 "\n", p_stats->write_backs);
+		printf("Victim cache misses: %" PRIu64 "\n", p_stats->vc_misses);
+		printf("Prefetched blocks: %" PRIu64 "\n", p_stats->prefetched_blocks);
+		printf("Useful prefetches: %" PRIu64 "\n", p_stats->useful_prefetches);
+		printf("Bytes transferred to/from memory: %" PRIu64 "\n", p_stats->bytes_transferred);
+		printf("Hit Time: %f\n", p_stats->hit_time);
+		printf("Miss Penalty: %.0f\n", p_stats->miss_penalty);
+		printf("Miss rate: %f\n", p_stats->miss_rate);
+		printf("Average access time (AAT): %f\n", p_stats->avg_access_time);
+
+		/*
+		printf("\n----My Statistics--------------\n");
+		printf("Evictions: %" PRIu64 "\n", p_stats->evictions);
+		printf("Misses with VC: %" PRIu64 "\n", p_stats->misses_with_VC);
+		printf("Read hits: %" PRIu64 "\n", p_stats->read_hits);
+		printf("Wirte hits: %" PRIu64 "\n", p_stats->write_hits);
+		printf("Bytes Read: %" PRIu64 "\n", p_stats->bytes_read);
+		printf("Bytes Written: %" PRIu64 "\n", p_stats->bytes_written);
+		printf("VC Hits Reads: %" PRIu64 "\n", p_stats->VC_hit_read);
+		printf("VC Hits Writes: %" PRIu64 "\n", p_stats->VC_hit_write);
+		printf("VC Hits: %" PRIu64 "\n", p_stats->VC_hits);
+		printf("Stride Match: %" PRIu64 "\n", p_stats->stride_match);
+		printf("Prefetch Hits: %" PRIu64 "\n", p_stats->prefetch_hit);
+		printf("Raw Blocks for Prefetch: %" PRIu64 "\n", p_stats->blocks_need_prefetch);
+		printf("Blocks Actually Prefetch: %" PRIu64 "\n", p_stats->blocks_actually_prefetched);
+		printf("Prefetches that was useful before: %" PRIu64 "\n", p_stats->prefetch_again++);
+		*/
+ }

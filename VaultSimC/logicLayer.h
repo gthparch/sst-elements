@@ -35,8 +35,12 @@
 #include "globals.h"
 #include "transaction.h"
 
+#include "cacheSim.h"
+
 using namespace std;
 using namespace SST;
+using namespace SST::Interfaces;
+using namespace SST::MemHierarchy;
 
 class logicLayer : public IntrospectedComponent {
 private:
@@ -73,6 +77,9 @@ private:
     // Determine if we 'own' a given address
     inline bool isOurs(unsigned int addr);
 
+    // cacheSim
+    inline void accessCache(MemEvent *event);
+
     /**
      *  Stats
      */
@@ -93,6 +100,7 @@ private:
     }
 
     void printStatsForMacSim();
+    void printCacheStatsForMacSim();
 
 private:
     bool haveQuad;
@@ -132,7 +140,9 @@ private:
     unsigned CacheLineSizeLog2;         // bits of CacheLineSize
 
     // cacheSim Vars
-    bool cacheSim;
+    cacheSim* cacheSimulator;
+    bool isCacheSimEn;
+
 
     // Multi logicLayer support (FIXME)
     unsigned int LL_MASK;
