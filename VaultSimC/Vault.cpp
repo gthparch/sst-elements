@@ -106,7 +106,7 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     dbg.output(CALL_INFO, "Vault%u: onFlyHmcOps_LimitPerWindow %d, onFlyHmcOps_LimitWindowSize: %d\n", \
         id, HMCOpsIssueLimitPerWindow, HMCOpsIssueLimitWindowSize);
     currentHMCOpsIssueBudget = HMCOpsIssueLimitPerWindow;
-    currentHMCIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
+    currentHMCOpsIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
 
     // Functional Units
     HmcFunctionalUnitNum = params.find<int>("HmcFunctionalUnit_Num", 1);
@@ -290,9 +290,9 @@ void Vault::update()
     updateQueue();
 
     //Limits Update
-    currentHMCIssueLimitWindowNum--;
-    if (currentHMCIssueLimitWindowNum==0) {
-        currentHMCIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
+    currentHMCOpsIssueLimitWindowNum--;
+    if (currentHMCOpsIssueLimitWindowNum==0) {
+        currentHMCOpsIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
         currentHMCOpsIssueBudget = HMCOpsIssueLimitPerWindow;
         dbg.debug(_L10_, "Vault %d: onFlyHMC Budget restored to %d @cycle=%lu\n", id, onFlyHMCOpsLimitPerWindow, currentClockCycle);
     }
@@ -348,7 +348,7 @@ void Vault::updateQueue()
                   }
                   else {
                       dbg.output(CALL_INFO, "Vault %d: onFlyHMC Budget full at window #%d(%d) @cycle=%lu\n",\
-                              id, currentHMCIssueLimitWindowNum, HMCOpsIssueLimitWindowSize, currentClockCycle);
+                              id, currentHMCOpsIssueLimitWindowNum, HMCOpsIssueLimitWindowSize, currentClockCycle);
                   }
             }
             else { // Not atomic op
