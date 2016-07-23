@@ -95,18 +95,23 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     currentDRAMSimUpdateWindowNum = DRAMSimUpdateWindowSize;
 
     // request limit
-    onFlyHMCOpsLimitPerWindow = params.find<int>("onFlyHmcOps_LimitPerWindow", 8);
-    if (0 >= onFlyHMCOpsLimitPerWindow)
+    HMCOpsIssueLimitPerWindow = params.find<int>("onFlyHmcOps_LimitPerWindow", 8);
+    if (0 >= HMCOpsIssueLimitPerWindow)
         dbg.fatal(CALL_INFO, -1, "HmcOpsIssue_LimitPerWindow not defined well\n");
 
-    onFlyHMCOpsLimitWindowSize = params.find<int>("onFlyHmcOps_LimitWindowSize", 1);
-    if (0 >= onFlyHMCOpsLimitWindowSize)
+    HMCOpsIssueLimitWindowSize = params.find<int>("onFlyHmcOps_LimitWindowSize", 1);
+    if (0 >= HMCOpsIssueLimitWindowSize)
         dbg.fatal(CALL_INFO, -1, "HmcOpsIssue_LimitWindowSize not defined well\n");
 
     dbg.output(CALL_INFO, "Vault%u: onFlyHmcOps_LimitPerWindow %d, onFlyHmcOps_LimitWindowSize: %d\n", \
-        id, onFlyHMCOpsLimitPerWindow, onFlyHMCOpsLimitWindowSize);
-    currentOnFlyHMCOpsBudget = onFlyHMCOpsLimitPerWindow;
-    currentLimitWindowNum = onFlyHMCOpsLimitWindowSize;
+        id, HMCOpsIssueLimitPerWindow, HMCOpsIssueLimitWindowSize);
+    currentHMCOpsIssueBudget = HMCOpsIssueLimitPerWindow;
+    currentHMCIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
+
+    // Functional Units
+    HmcFunctionalUnitNum = params.find<int>("HmcFunctionalUnit_Num", 1);
+
+    dbg.output(CALL_INFO, "Vault%u: HmcFunctionalUnit_Num %d\n", id, HmcFunctionalUnitNum);
 
     // Atomics Banks Mapping
     numDramBanksPerRank = 1;
@@ -132,6 +137,8 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     statTotalHmcOps       = registerStatistic<uint64_t>("Total_hmc_ops", "0");
     statTotalNonHmcOps    = registerStatistic<uint64_t>("Total_non_hmc_ops", "0");
     statTotalHmcCandidate = registerStatistic<uint64_t>("Total_candidate_hmc_ops", "0");
+
+    statCyclesFUFullForHMCIssue = registerStatistic<uint64_t>("Cycles_fu_full_for_hmc_issue", "0");
 
     statTotalHmcConfilictHappened = registerStatistic<uint64_t>("Total_hmc_confilict_happened", "0");
 
@@ -283,10 +290,10 @@ void Vault::update()
     updateQueue();
 
     //Limits Update
-    currentLimitWindowNum--;
-    if (currentLimitWindowNum==0) {
-        currentLimitWindowNum = onFlyHMCOpsLimitWindowSize;
-        currentOnFlyHMCOpsBudget = onFlyHMCOpsLimitPerWindow;
+    currentHMCIssueLimitWindowNum--;
+    if (currentHMCIssueLimitWindowNum==0) {
+        currentHMCIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
+        currentHMCOpsIssueBudget = HMCOpsIssueLimitPerWindow;
         dbg.debug(_L10_, "Vault %d: onFlyHMC Budget restored to %d @cycle=%lu\n", id, onFlyHMCOpsLimitPerWindow, currentClockCycle);
     }
 
@@ -319,13 +326,13 @@ void Vault::updateQueue()
         // Bank is unlock
         if (!getBankState(transQ[i].getBankNo())) {
             if (transQ[i].getAtomic()) {
-                if (currentOnFlyHMCOpsBudget) {
+                if (currentHMCOpsIssueBudget) {
                     // Lock the bank
                     lockBank(transQ[i].getBankNo());
 
                     // Add to onFlyHmcOps
                     onFlyHmcOps[transQ[i].getAddr()] = transQ[i];
-                    currentOnFlyHMCOpsBudget--;
+                    currentHMCOpsIssueBudget--;
                     addr2TransactionMap_t::iterator mi = onFlyHmcOps.find(transQ[i].getAddr());
                     dbg.debug(_L9_, "Vault %d:hmc: Atomic op %p (bank%u) of type %s issued @cycle=%lu\n",
                             id, (void*)transQ[i].getAddr(), transQ[i].getBankNo(), transQ[i].getHmcOpTypeStr(), currentClockCycle);
@@ -341,7 +348,7 @@ void Vault::updateQueue()
                   }
                   else {
                       dbg.output(CALL_INFO, "Vault %d: onFlyHMC Budget full at window #%d(%d) @cycle=%lu\n",\
-                              id, currentLimitWindowNum, onFlyHMCOpsLimitWindowSize, currentClockCycle);
+                              id, currentHMCIssueLimitWindowNum, HMCOpsIssueLimitWindowSize, currentClockCycle);
                   }
             }
             else { // Not atomic op

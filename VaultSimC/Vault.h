@@ -196,15 +196,17 @@ private:
     bank2AddrMap_t addrComputeMap;
 
     // Limits
-    int onFlyHMCOpsLimitPerWindow;
-    int onFlyHMCOpsLimitWindowSize;
-    int currentOnFlyHMCOpsBudget;
-    int currentLimitWindowNum;
+    int HMCOpsIssueLimitPerWindow;
+    int HMCOpsIssueLimitWindowSize;
+    int currentHMCOpsIssueBudget;
+    int currentHMCOpsIssueLimitWindowNum;
 
     int DRAMSimUpdatePerWindow;
     int DRAMSimUpdateWindowSize;
     int currentDRAMSimUpdateBudget;
     int currentDRAMSimUpdateWindowNum;
+
+    int HmcFunctionalUnitNum;
 
     // HMC ops Cost in Cycles
     int HMCCostLogicalOps;
@@ -223,6 +225,8 @@ private:
     Statistic<uint64_t>* statTotalNonHmcOps;
     Statistic<uint64_t>* statTotalHmcCandidate;
     Statistic<uint64_t>* statTotalHmcConfilictHappened;
+
+    Statistic<uint64_t>* statCyclesFUFullForHMCIssue;
 
     Statistic<uint64_t>* statTotalNonHmcRead;
     Statistic<uint64_t>* statTotalNonHmcWrite;
