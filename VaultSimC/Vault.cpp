@@ -294,7 +294,7 @@ void Vault::update()
     if (currentHMCOpsIssueLimitWindowNum==0) {
         currentHMCOpsIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
         currentHMCOpsIssueBudget = HMCOpsIssueLimitPerWindow;
-        dbg.debug(_L10_, "Vault %d: onFlyHMC Budget restored to %d @cycle=%lu\n", id, onFlyHMCOpsLimitPerWindow, currentClockCycle);
+        dbg.debug(_L10_, "Vault %d: onFlyHMC Budget restored to %d @cycle=%lu\n", id, currentHMCOpsIssueBudget, currentClockCycle);
     }
 
 }
@@ -326,7 +326,7 @@ void Vault::updateQueue()
         // Bank is unlock
         if (!getBankState(transQ[i].getBankNo())) {
             if (transQ[i].getAtomic()) {
-                if (currentHMCOpsIssueBudget) {
+                if (currentHMCOpsIssueBudget && onFlyHmcOps.size() < HmcFunctionalUnitNum) {
                     // Lock the bank
                     lockBank(transQ[i].getBankNo());
 
@@ -347,8 +347,12 @@ void Vault::updateQueue()
                     mi->second.issueCycle = currentClockCycle;
                   }
                   else {
-                      dbg.output(CALL_INFO, "Vault %d: onFlyHMC Budget full at window #%d(%d) @cycle=%lu\n",\
-                              id, currentHMCOpsIssueLimitWindowNum, HMCOpsIssueLimitWindowSize, currentClockCycle);
+                      dbg.debug(_L9_, "Vault %d: onFlyHMC Budget full at window #%d(%d) --- " \
+                                "concurrent HMC Ops size is %d, FU# is %d @cycle=%lu\n",\
+                                id, currentHMCOpsIssueLimitWindowNum, HMCOpsIssueLimitWindowSize, \
+                                onFlyHmcOps.size(), HmcFunctionalUnitNum, currentClockCycle);
+
+                     statCyclesFUFullForHMCIssue->addData(1);
                   }
             }
             else { // Not atomic op
@@ -541,6 +545,8 @@ void Vault::printStatsForMacSim() {
     writeTo(ofs, name_, string("total_HMC_ops"),                    statTotalHmcOps->getCollectionCount());
     writeTo(ofs, name_, string("total_non_HMC_ops"),                statTotalNonHmcOps->getCollectionCount());
     writeTo(ofs, name_, string("total_HMC_candidate_ops"),          statTotalHmcCandidate->getCollectionCount());
+    ofs << "\n";
+    writeTo(ofs, name_, string("cycles_FU_full_for_HMC_issue"),          statCyclesFUFullForHMCIssue->getCollectionCount());
     ofs << "\n";
     writeTo(ofs, name_, string("total_hmc_confilict_happened"),     statTotalHmcConfilictHappened->getCollectionCount());
     ofs << "\n";
