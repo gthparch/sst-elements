@@ -61,7 +61,7 @@ static const ElementInfoParam logicLayer_params[] = {
   {"have_quad",                       "If logicLayer has quads set to 1", "0"},
   {"num_vault_per_quad",              "Number of Vaults per quad", "4"},
   {"req_LimitPerCycle",               "***DEPRECATED** kept for compatibility: use req_LimitPerWindow & req_LimitWindowSize in your configuration"},
-  {"req_LimitPerWindow",              "Number of memory events which can be processed per window (in cycles) per link."},
+  {"req_LimitPerWindow",              "Number of FLITs which can be processed per window (in cycles) per link (input + output)."},
   {"req_LimitWindowSize",             "Number of window size in cycles for limiting number of requests", "1"},
   {"LL_MASK",                         "Bitmask to determine 'ownership' of an address by a cube. A cube 'owns' an address if ((((addr >> LL_SHIFT) & LL_MASK) == llID) || (LL_MASK == 0)). LL_SHIFT is set in vaultGlobals.h and is 8 by default."},
   {"terminal",                        "Is this the last cube in the chain?"},

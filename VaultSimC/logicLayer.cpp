@@ -33,10 +33,10 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
         dbg.fatal(CALL_INFO, -1, "llID not defined\n");
     llID = ident;
 
-    // request limit
+    // request limit (BW control)
     reqLimitPerWindow = params.find<int>("req_LimitPerWindow", -1);
     if (0 >= reqLimitPerWindow)
-        dbg.fatal(CALL_INFO, -1, " req_LimitPerWindow not defined well\n");
+        dbg.fatal(CALL_INFO, -1, " req_LimitPerWindow not defined well (defined in FLITs)\n");
 
     reqLimitWindowSize = params.find<int>("req_LimitWindowSize", 1);
     if (0 >= reqLimitWindowSize)
@@ -44,13 +44,15 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
 
     int test = params.find<int>("req_LimitPerCycle", -1);
     if (test != -1)
-        dbg.fatal(CALL_INFO, -1, "req_LimitPerCycle ***DEPRECATED** kept for compatibility: use req_LimitPerWindow & req_LimitWindowSize in your configuration\n");
+        dbg.fatal(CALL_INFO, -1, "req_LimitPerCycle ***DEPRECATED** kept for compatibility: " \
+        "use req_LimitPerWindow & req_LimitWindowSize in your configuration\n");
+
 
     dbg.debug(_INFO_, "req_LimitPerWindow %d, req_LimitWindowSize: %d\n", reqLimitPerWindow, reqLimitWindowSize);
     currentLimitReqBudgetCPU[0] = reqLimitPerWindow;
     currentLimitReqBudgetCPU[1] = reqLimitPerWindow;
-    currentLimitReqBudgetMem[0] = reqLimitPerWindow;
-    currentLimitReqBudgetMem[1] = reqLimitPerWindow;
+    currentLimitReqBudgetMemChain[0] = reqLimitPerWindow;
+    currentLimitReqBudgetMemChain[1] = reqLimitPerWindow;
     currentLimitWindowNum = reqLimitWindowSize;
 
     //
@@ -185,6 +187,11 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
     reqUsedToCpu[1] = registerStatistic<uint64_t>("Req_send_to_CPU", "0");
     reqUsedToMem[0] = registerStatistic<uint64_t>("Req_recv_from_Mem", "0");
     reqUsedToMem[1] = registerStatistic<uint64_t>("Req_send_to_Mem", "0");
+
+    statFLITtoCPU = 0;
+    statFLITfromCPU = 0;
+    statFLITtoMem = 0;
+    statFLITfromMem = 0;
 }
 
 void logicLayer::finish()
@@ -227,7 +234,9 @@ bool logicLayer::clock(Cycle_t currentCycle)
             HMCOpsProcessed->addData(1);
         #endif
 
-        currentLimitReqBudgetCPU[0]--;
+        int reqFLITs = getReqFLITs(event, true);
+        currentLimitReqBudgetCPU[0] -= reqFLITs;
+        statFLITfromCPU += reqFLITs;
         reqUsedToCpu[0]->addData(1);
 
         // (Multi LogicLayer) Check if it is for this LogicLayer
@@ -257,8 +266,10 @@ bool logicLayer::clock(Cycle_t currentCycle)
         else {
             if (NULL == toMem)
                 dbg.fatal(CALL_INFO, -1, "LogicLayer%d not sure what to do with %p...\n", llID, event);
-            toMem->send(event);
             reqUsedToMem[1]->addData(1);
+            currentLimitReqBudgetMemChain[1] -= reqFLITs;
+            statFLITtoMem += reqFLITs;
+            toMem->send(event);
             dbg.debug(_L4_, "LogicLayer%d sends %p to next\n", llID, event);
         }
     }
@@ -266,38 +277,47 @@ bool logicLayer::clock(Cycle_t currentCycle)
     // 2)
     /* Check For Events From Memory Chain
      *     and send them to CPU
+     *     NOT EFFECTIVE CURRENTLY
      **/
     if (NULL != toMem) {
-        while ( currentLimitReqBudgetMem[0] && (ev = toMem->recv()) ) {
+        while ( currentLimitReqBudgetMemChain[0] && (ev = toMem->recv()) ) {
             MemEvent *event  = dynamic_cast<MemEvent*>(ev);
             if (NULL == event)
                 dbg.fatal(CALL_INFO, -1, "LogicLayer%d got bad event from another LogicLayer\n", llID);
 
+            int reqFLITs = getReqFLITs(event, false);
+            currentLimitReqBudgetMemChain[0] -= reqFLITs;
+            statFLITfromMem += reqFLITs;
+            currentLimitReqBudgetCPU[1] -= reqFLITs;
+            statFLITtoCPU += reqFLITs;
+            reqUsedToCpu[1]->addData(1);
             reqUsedToMem[0]->addData(1);
 
             toCPU->send(event);
-            currentLimitReqBudgetMem[0]--;
-            currentLimitReqBudgetCPU[1]--;
-            reqUsedToCpu[1]->addData(1);
             dbg.debug(_L4_, "LogicLayer%d sends %p towards cpu (%" PRIu64 " %d)\n", llID, event, event->getID().first, event->getID().second);
         }
     }
 
     // 3)
-    /* Check For Events From Quads
+    /* Check For Events From Quads (or Vaults)
      *     and send them to CPU
      *     Transaction Support: save all transaction until we know what to do with them (dump or restart)
      **/
     unsigned j = 0;
     for (memChans_t::iterator it = outChans.begin(); it != outChans.end(); ++it, ++j) {
         memChan_t *m_memChan = *it;
-        while ((ev = m_memChan->recv())) {
+        while ( currentLimitReqBudgetCPU[1] && (ev = m_memChan->recv()) ) {
             MemEvent *event  = dynamic_cast<MemEvent*>(ev);
             if (event == NULL)
                 dbg.fatal(CALL_INFO, -1, "LogicLayer%d got bad event from vaults\n", llID);
-            memOpsProcessed->addData(1);
-            toCPU->send(event);
+
+            int reqFLITs = getReqFLITs(event, false);
+            currentLimitReqBudgetCPU[1] -= reqFLITs;
+            statFLITtoCPU += reqFLITs;
             reqUsedToCpu[1]->addData(1);
+            memOpsProcessed->addData(1);
+
+            toCPU->send(event);
             dbg.debug(_L4_, "LogicLayer%d got event %p from vault %u @%" PRIu64 ", sent towards cpu\n", llID, (void*)event->getAddr(), j, currentCycle);
         }
     }
@@ -321,9 +341,9 @@ bool logicLayer::clock(Cycle_t currentCycle)
 
 
     // Check for limits
-    if (currentLimitReqBudgetCPU[0]==0 || currentLimitReqBudgetCPU[1]==0 || currentLimitReqBudgetMem[0]==0 || currentLimitReqBudgetMem[1]==0) {
+    if (currentLimitReqBudgetCPU[0]==0 || currentLimitReqBudgetCPU[1]==0 || currentLimitReqBudgetMemChain[0]==0 || currentLimitReqBudgetMemChain[1]==0) {
         dbg.debug(_L4_, "logicLayer%d request budget saturated (%d %d %d %d) in window number %d @cycle=%lu\n",\
-         llID, currentLimitReqBudgetCPU[0], currentLimitReqBudgetCPU[1],  currentLimitReqBudgetMem[0],  currentLimitReqBudgetMem[1], \
+         llID, currentLimitReqBudgetCPU[0], currentLimitReqBudgetCPU[1],  currentLimitReqBudgetMemChain[0],  currentLimitReqBudgetMemChain[1], \
          currentLimitWindowNum, currentCycle);
     }
 
@@ -332,8 +352,8 @@ bool logicLayer::clock(Cycle_t currentCycle)
     if (currentLimitWindowNum == 0) {
         currentLimitReqBudgetCPU[0] = reqLimitPerWindow;
         currentLimitReqBudgetCPU[1] = reqLimitPerWindow;
-        currentLimitReqBudgetMem[0] = reqLimitPerWindow;
-        currentLimitReqBudgetMem[1] = reqLimitPerWindow;
+        currentLimitReqBudgetMemChain[0] = reqLimitPerWindow;
+        currentLimitReqBudgetMemChain[1] = reqLimitPerWindow;
 
         currentLimitWindowNum = reqLimitWindowSize;
         dbg.debug(_L5_, "LogicLayer%d request budget restored (every %d cycles) @cycle=%lu\n", llID, reqLimitWindowSize, currentCycle);
@@ -342,6 +362,53 @@ bool logicLayer::clock(Cycle_t currentCycle)
     return false;
 }
 
+
+/*
+ * returns number of FLITs per request
+ */
+int logicLayer::getReqFLITs(MemEvent *event, bool isReq)
+{
+    uint32_t HMCTypeEvent = event->getMemFlags();
+    assert(HMCTypeEvent < NUM_HMC_TYPES);
+
+    if (HMCTypeEvent == HMC_NONE) {
+        bool isWrite = false;
+
+        switch(event->getCmd()) {
+        case SST::MemHierarchy::GetS:
+            isWrite = false;
+            break;
+        case SST::MemHierarchy::GetSEx:
+        case SST::MemHierarchy::GetX:
+            isWrite = true;
+            break;
+        default:
+            break;
+        }
+
+        if (isWrite) {
+            if (isReq) return 5;
+            else return 1;
+        }
+        else {
+            if (isReq) return 1;
+            else return 0;
+        }
+    }
+
+
+    else { //HMC Atomics
+        if (HMCTypeEvent == HMC_FP_ADD || HMCTypeEvent == HMC_ADD_DUAL || \
+            HMCTypeEvent == HMC_ADD_8B || HMCTypeEvent == HMC_ADD_16B || \
+            HMC_COMP_equal ) {
+                if (isReq) return 2;
+                else return 1;
+        }
+        else return 2;
+
+    }
+
+}
 
 /*
  * cacheSim Functions
@@ -413,8 +480,13 @@ void logicLayer::printStatsForMacSim() {
     ofs << "\n";
     writeTo(ofs, suffix, string("req_recv_from_CPU"), reqUsedToCpu[0]->getCollectionCount());
     writeTo(ofs, suffix, string("req_send_to_CPU"),   reqUsedToCpu[1]->getCollectionCount());
-    writeTo(ofs, suffix, string("req_recv_from_Mem"), reqUsedToMem[0]->getCollectionCount());
-    writeTo(ofs, suffix, string("req_send_to_Mem"),   reqUsedToMem[1]->getCollectionCount());
+    writeTo(ofs, suffix, string("req_recv_from_Mem_chain"), reqUsedToMem[0]->getCollectionCount());
+    writeTo(ofs, suffix, string("req_send_to_Mem_chain"),   reqUsedToMem[1]->getCollectionCount());
+    ofs << "\n";
+    writeTo(ofs, suffix, string("FLITs_send_to_CPU"), statFLITtoCPU);
+    writeTo(ofs, suffix, string("FLITs_recv_from_CPU"), statFLITfromCPU);
+    writeTo(ofs, suffix, string("FLITs_send_to_Mem_chain"), statFLITtoMem);
+    writeTo(ofs, suffix, string("FLITs_recv_from_Mem_chain"), statFLITfromMem);
     ofs << "\n";
     writeTo(ofs, suffix, string("total_HMC_candidate_ops"),   HMCCandidateProcessed->getCollectionCount());
 }

@@ -80,6 +80,10 @@ private:
     // cacheSim
     inline void accessCache(MemEvent *event);
 
+    // returns number of FLITs per request
+    int getReqFLITs(MemEvent *event, bool isReq);
+
+
     /**
      *  Stats
      */
@@ -113,8 +117,8 @@ private:
     // BW control
     int reqLimitPerWindow;
     int reqLimitWindowSize;
-    int currentLimitReqBudgetCPU[2];    // {recv, send}
-    int currentLimitReqBudgetMem[2];    // {recv, send}
+    int currentLimitReqBudgetCPU[2];         // {recv, send}
+    int currentLimitReqBudgetMemChain[2];    // {recv, send}
     int currentLimitWindowNum;
 
     unsigned int llID;
@@ -167,6 +171,11 @@ private:
 
     Statistic<uint64_t>* reqUsedToCpu[2];
     Statistic<uint64_t>* reqUsedToMem[2];
+
+    uint64_t statFLITtoCPU;
+    uint64_t statFLITfromCPU;
+    uint64_t statFLITtoMem;
+    uint64_t statFLITfromMem;
 
     // Output
     Output dbg;                 // Output, for printing debuging commands
