@@ -97,11 +97,11 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     // request limit
     onFlyHMCOpsLimitPerWindow = params.find<int>("onFlyHmcOps_LimitPerWindow", 8);
     if (0 >= onFlyHMCOpsLimitPerWindow)
-        dbg.fatal(CALL_INFO, -1, "onFlyHmcOps_LimitPerWindow not defined well\n");
+        dbg.fatal(CALL_INFO, -1, "HmcOpsIssue_LimitPerWindow not defined well\n");
 
     onFlyHMCOpsLimitWindowSize = params.find<int>("onFlyHmcOps_LimitWindowSize", 1);
     if (0 >= onFlyHMCOpsLimitWindowSize)
-        dbg.fatal(CALL_INFO, -1, "onFlyHmcOps_LimitWindowSize not defined well\n");
+        dbg.fatal(CALL_INFO, -1, "HmcOpsIssue_LimitWindowSize not defined well\n");
 
     dbg.output(CALL_INFO, "Vault%u: onFlyHmcOps_LimitPerWindow %d, onFlyHmcOps_LimitWindowSize: %d\n", \
         id, onFlyHMCOpsLimitPerWindow, onFlyHMCOpsLimitWindowSize);
