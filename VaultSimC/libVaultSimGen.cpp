@@ -43,6 +43,7 @@ static const ElementInfoPort logicLayer_ports[] = {
 };
 
 static const ElementInfoStatistic logicLayer_statistics[] = {
+  { "Clocks", "Total calls of clock function", "cycles", 1},
   { "Total_memory_ops_processed", "Total memory ops processed", "reqs", 1},
   { "HMC_ops_processed", "Total HMC ops processed", "reqs", 1},
   { "Total_HMC_candidate_processed", "Total HMC Candidate (instruction that might be able to use HMC) ops processed", "reqs", 1},
@@ -51,6 +52,9 @@ static const ElementInfoStatistic logicLayer_statistics[] = {
   { "Req_send_to_CPU", "Bandwidth used (sends from the CPU by the LL) per cycle (in messages)", "reqs", 1},
   { "Req_recv_from_Mem", "Bandwidth used (receives from other memories by the LL) per cycle (in messages)", "reqs", 1},
   { "Req_send_to_Mem", "Bandwidth used (sends from other memories by the LL) per cycle (in messages)", "reqs", 1},
+  { "Bw_From_CPU_is_Full", "Number of Cycles that LL could not get req from CPU because BW was full", "cycles", 1},
+  { "Bw_To_CPU_is_Full", "Number of Cycles that LL could not send req to CPU because BW was full", "cycles", 1},
+
   { NULL, NULL, NULL, 0 }
 };
 

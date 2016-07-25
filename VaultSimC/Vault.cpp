@@ -95,15 +95,15 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
     currentDRAMSimUpdateWindowNum = DRAMSimUpdateWindowSize;
 
     // request limit
-    HMCOpsIssueLimitPerWindow = params.find<int>("onFlyHmcOps_LimitPerWindow", 8);
+    HMCOpsIssueLimitPerWindow = params.find<int>("HmcOpsIssue_LimitPerWindow", 8);
     if (0 >= HMCOpsIssueLimitPerWindow)
         dbg.fatal(CALL_INFO, -1, "HmcOpsIssue_LimitPerWindow not defined well\n");
 
-    HMCOpsIssueLimitWindowSize = params.find<int>("onFlyHmcOps_LimitWindowSize", 1);
+    HMCOpsIssueLimitWindowSize = params.find<int>("HmcOpsIssue_LimitWindowSize", 1);
     if (0 >= HMCOpsIssueLimitWindowSize)
         dbg.fatal(CALL_INFO, -1, "HmcOpsIssue_LimitWindowSize not defined well\n");
 
-    dbg.output(CALL_INFO, "Vault%u: onFlyHmcOps_LimitPerWindow %d, onFlyHmcOps_LimitWindowSize: %d\n", \
+    dbg.output(CALL_INFO, "Vault%u: HmcOpsIssue_LimitPerWindow %d, HmcOpsIssue_LimitWindowSize: %d\n", \
         id, HMCOpsIssueLimitPerWindow, HMCOpsIssueLimitWindowSize);
     currentHMCOpsIssueBudget = HMCOpsIssueLimitPerWindow;
     currentHMCOpsIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;

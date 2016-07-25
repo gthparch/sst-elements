@@ -47,9 +47,11 @@ private:
     typedef SST::Link memChan_t;
     typedef vector<memChan_t*> memChans_t;
 
-    #ifdef USE_VAULTSIM_HMC
-    typedef unordered_map<uint64_t, vector<MemHierarchy::MemEvent*> > tIdQueue_t;
-    #endif
+    typedef queue<MemEvent *> MemEventsQ_t;
+
+    // #ifdef USE_VAULTSIM_HMC
+    // typedef unordered_map<uint64_t, vector<MemHierarchy::MemEvent*> > tIdQueue_t;
+    // #endif
 
 public:
     /**
@@ -130,6 +132,10 @@ private:
     SST::Link *toCPU;
     memChans_t toXBar;
 
+    //BW control queue
+    MemEventsQ_t inEventsQ;
+    MemEventsQ_t outEventsQ;
+
     // Mapping
     uint64_t sendAddressMask;
     int sendAddressShift;
@@ -164,6 +170,8 @@ private:
     // #endif
 
     // Statistics
+    Statistic<uint64_t>* totalClocks;
+
     Statistic<uint64_t>* memOpsProcessed;
     Statistic<uint64_t>* HMCCandidateProcessed;
     Statistic<uint64_t>* HMCOpsProcessed;
@@ -171,6 +179,9 @@ private:
 
     Statistic<uint64_t>* reqUsedToCpu[2];
     Statistic<uint64_t>* reqUsedToMem[2];
+
+    Statistic<uint64_t>* bwFromCpuFull;
+    Statistic<uint64_t>* bwToCpuFull;
 
     uint64_t statFLITtoCPU;
     uint64_t statFLITfromCPU;
