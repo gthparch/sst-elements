@@ -118,6 +118,7 @@ private:
      */
     void issueAtomicFirstMemoryPhase(addr2TransactionMap_t::iterator mi);
     void issueAtomicSecondMemoryPhase(addr2TransactionMap_t::iterator mi);
+    void skipAtomicSecondMemoryPhase(addr2TransactionMap_t::iterator mi);
     void issueAtomicComputePhase(addr2TransactionMap_t::iterator mi);
 
 
@@ -207,6 +208,10 @@ private:
     int currentDRAMSimUpdateWindowNum;
 
     int HmcFunctionalUnitNum;
+
+    // Atomic RMW - Write Enable
+    bool HMCAtomicSendWrToMemEn;
+    int HMCCostWr;
 
     // HMC ops Cost in Cycles
     int HMCCostLogicalOps;

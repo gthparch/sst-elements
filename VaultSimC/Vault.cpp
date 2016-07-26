@@ -113,6 +113,12 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
 
     dbg.output(CALL_INFO, "Vault%u: HmcFunctionalUnit_Num %d\n", id, HmcFunctionalUnitNum);
 
+    // Atomic RMW - Write Enable
+    HMCAtomicSendWrToMemEn = params.find<bool>("HMCAtomic_SendWrToMem_En", 1);
+    dbg.output(CALL_INFO, "Vault%u: HMCAtomic_SendWrToMem_En %d\n", id, HMCAtomicSendWrToMemEn);
+
+    HMCCostWr = params.find<int>("HMCCost_WrToMem", 8);
+
     // Atomics Banks Mapping
     numDramBanksPerRank = 1;
     #ifdef USE_VAULTSIM_HMC
@@ -177,7 +183,7 @@ void Vault::readComplete(unsigned id, uint64_t addr, uint64_t cycle)
     if (mi == onFlyHmcOps.end()) {
         // DRAMSim returns ID that is useless to us
         (*readCallback)(id, addr, cycle);
-        dbg.debug(_L7_, "Vault %d:hmc: Atomic op %p callback(read) @cycle=%lu\n",
+        dbg.debug(_L7_, "Vault %d:hmc: simple %p callback(read) @cycle=%lu\n",
                 id, (void*)addr, cycle);
     }
     else {
@@ -208,7 +214,7 @@ void Vault::writeComplete(unsigned id, uint64_t addr, uint64_t cycle)
     if (mi == onFlyHmcOps.end()) {
         // DRAMSim returns ID that is useless to us
         (*writeCallback)(id, addr, cycle);
-        dbg.debug(_L8_, "Vault %d:hmc: Atomic op %p callback(write) @cycle=%lu\n",
+        dbg.debug(_L8_, "Vault %d:hmc: simple %p callback(write) @cycle=%lu\n",
                 id, (void*)addr, cycle);
     }
     else {
@@ -266,7 +272,9 @@ void Vault::update()
                 dbg.debug(_L9_, "Vault %d:hmc: Atomic op %p (bank%u) compute phase has been done @cycle=%lu\n", \
                         id, (void*)addrCompute, bankId, currentClockCycle);
                 addr2TransactionMap_t::iterator mi = onFlyHmcOps.find(addrCompute);
-                issueAtomicSecondMemoryPhase(mi);
+
+                if (HMCAtomicSendWrToMemEn) issueAtomicSecondMemoryPhase(mi);
+                else skipAtomicSecondMemoryPhase(mi);
 
                 eraseAddrCompute(bankId);
                 eraseComputeDoneCycle(bankId);
@@ -347,9 +355,10 @@ void Vault::updateQueue()
                     mi->second.issueCycle = currentClockCycle;
                   }
                   else {
-                      dbg.debug(_L9_, "Vault %d: onFlyHMC Budget full at window #%d(%d) --- " \
+                      dbg.debug(_L9_, "Vault %d: onFlyHMC Budget %d(%d) full at window #%d(%d) --- " \
                                 "concurrent HMC Ops size is %d, FU# is %d @cycle=%lu\n",\
-                                id, currentHMCOpsIssueLimitWindowNum, HMCOpsIssueLimitWindowSize, \
+                                id, currentHMCOpsIssueBudget, HMCOpsIssueLimitPerWindow, \
+                                currentHMCOpsIssueLimitWindowNum, HMCOpsIssueLimitWindowSize, \
                                 onFlyHmcOps.size(), HmcFunctionalUnitNum, currentClockCycle);
 
                      statCyclesFUFullForHMCIssue->addData(1);
@@ -460,6 +469,33 @@ void Vault::issueAtomicSecondMemoryPhase(addr2TransactionMap_t::iterator mi)
 }
 
 
+void Vault::skipAtomicSecondMemoryPhase(addr2TransactionMap_t::iterator mi)
+{
+    dbg.debug(_L9_, "Vault %d:hmc: Atomic op %p (bank%u) skip wr done @cycle=%lu\n",
+            id, (void*)mi->second.getAddr(),  mi->second.getBankNo(), currentClockCycle);
+
+    // mi->second.setHmcOpState(WRITE_ANS_RECV);
+    // return as a write since all hmc ops comes as read
+    (*writeCallback)(id, mi->second.getAddr(), currentClockCycle);
+
+    /* statistics */
+    mi->second.writeDoneCycle = currentClockCycle;
+    statTotalHmcLatency->addData(mi->second.writeDoneCycle - mi->second.inCycle);
+    statIssueHmcLatency->addData(mi->second.issueCycle - mi->second.inCycle);
+    statReadHmcLatency->addData(mi->second.readDoneCycle - mi->second.issueCycle);
+    statWriteHmcLatency->addData(mi->second.writeDoneCycle - mi->second.readDoneCycle);
+
+    statTotalHmcLatencyInt += (mi->second.writeDoneCycle - mi->second.inCycle);
+    statIssueHmcLatencyInt += (mi->second.issueCycle - mi->second.inCycle);
+    statReadHmcLatencyInt += (mi->second.readDoneCycle - mi->second.issueCycle);
+    statWriteHmcLatencyInt += (mi->second.writeDoneCycle - mi->second.readDoneCycle);
+
+    // unlock
+    unlockBank(mi->second.getBankNo());
+    onFlyHmcOps.erase(mi);
+}
+
+
 void Vault::issueAtomicComputePhase(addr2TransactionMap_t::iterator mi)
 {
     dbg.debug(_L9_, "Vault %d:hmc: Atomic op %p (bank%u) compute phase started @cycle=%lu\n",
@@ -470,47 +506,52 @@ void Vault::issueAtomicComputePhase(addr2TransactionMap_t::iterator mi)
     uint64_t addrCompute = mi->second.getAddr();
     setAddrCompute(bankNoCompute, addrCompute);
 
+    // Atomic RMW - Write Enable
+    int HMCCostWrtmp = 0;
+    if (!HMCAtomicSendWrToMemEn) HMCCostWrtmp = HMCCostWr;
+
     switch (mi->second.getHmcOpType()) {
     case (HMC_CAS_equal_16B):
     case (HMC_CAS_zero_16B):
     case (HMC_CAS_greater_16B):
     case (HMC_CAS_less_16B):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostCASOps;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_ADD_16B):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostAdd16;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostAdd16 + HMCCostWrtmp);
         break;
     case (HMC_ADD_8B):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostAdd8;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_ADD_DUAL):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostAddDual;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_SWAP):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostSwap;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_BIT_WR):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostBitW;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_AND):
     case (HMC_NAND):
     case (HMC_OR):
     case (HMC_XOR):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostLogicalOps;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_FP_ADD):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostFPAdd;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_COMP_greater):
     case (HMC_COMP_less):
     case (HMC_COMP_equal):
-        computeDoneCycleMap[bankNoCompute] = currentClockCycle + HMCCostCompOps;
+        setComputeDoneCycle(bankNoCompute, currentClockCycle + HMCCostCASOps + HMCCostWrtmp);
         break;
     case (HMC_NONE):
     default:
         dbg.fatal(CALL_INFO, -1, "Vault Should not get a non HMC op in issue atomic (compute phase)\n");
         break;
     }
+
 }
 
 /*
