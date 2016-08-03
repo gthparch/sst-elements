@@ -859,7 +859,7 @@ void MyNetwork::printStats()
   // 1-to-N or N-to-1 Mode
   else {
     // 1-to-N
-    if (numCore == 1 && numStack > 1) {
+    if (numCore == 1 && numStack >= 1) {
       uint64_t totalRequests = 0;
       for_each(requests.begin(), requests.end(), [&totalRequests] (uint64_t req) { totalRequests += req; });
       dbg.debug(_L7_, "total requests: %" PRIu64 "\n", totalRequests);
