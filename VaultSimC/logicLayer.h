@@ -109,6 +109,9 @@ private:
     void printCacheStatsForMacSim();
 
 private:
+    Clock::HandlerBase* clockHandler;
+    TimeConverter* tc;
+
     bool haveQuad;
     int numVaultPerQuad;
     int numVaultPerQuad2;

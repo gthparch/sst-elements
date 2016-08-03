@@ -172,8 +172,13 @@ logicLayer::logicLayer(ComponentId_t id, Params& params) : IntrospectedComponent
     // clock
     std::string frequency;
     frequency = params.find<string>("clock", "2.0 Ghz");
-    registerClock(frequency, new Clock::Handler<logicLayer>(this, &logicLayer::clock));
+    clockHandler = new Clock::Handler<logicLayer>(this, &logicLayer::clock);
+    tc = registerClock(frequency, clockHandler);
     dbg.debug(_INFO_, "Making LogicLayer with id=%d & clock=%s\n", llID, frequency.c_str());
+
+    /* to change clock in runtime e.g. DVFS */
+    // unregisterClock(tc, clockHandler);
+    // tc = registerClock("0.1 GHz", clockHandler);
 
     // Stats Initialization
     statsFormat = params.find<int>("statistics_format", 0);
