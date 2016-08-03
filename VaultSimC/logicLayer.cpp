@@ -406,7 +406,7 @@ int logicLayer::getReqFLITs(MemEvent *event, bool isReq)
     uint32_t HMCTypeEvent = event->getMemFlags();
     assert(HMCTypeEvent < NUM_HMC_TYPES);
 
-    if (HMCTypeEvent == HMC_NONE) {
+    if (HMCTypeEvent == HMC_NONE || HMCTypeEvent == HMC_CANDIDATE) {
         bool isWrite = false;
 
         switch(event->getCmd()) {
