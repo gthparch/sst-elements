@@ -235,7 +235,7 @@ bool logicLayer::clock(Cycle_t currentCycle)
 
         MemEvent *event  = dynamic_cast<MemEvent*>(ev);
         if (NULL == event) dbg.fatal(CALL_INFO, -1, "LogicLayer%d got bad event\n", llID);
-        dbg.debug(_L4_, "LogicLayer%d got req for %p (%" PRIu64 " %d)\n", llID, (void*)event->getAddr(), event->getID().first, event->getID().second);
+        dbg.debug(_L4_, "LogicLayer%d got req for %p (%" PRIu64 ")\n", llID, (void*)event->getAddr(), event->getID().first);
 
         // Check for BW
         int reqFLITs = getReqFLITs(event, true);
@@ -275,7 +275,7 @@ bool logicLayer::clock(Cycle_t currentCycle)
             else {
                 unsigned int sendID = (event->getAddr() >>  sendAddressShift) & sendAddressMask;
                 outChans[sendID]->send(event);
-                dbg.debug(_L4_, "LogicLayer%d sends %p to vault%u @ %" PRIu64 "\n", llID, (void*)event->getAddr(), sendID, currentCycle);
+                dbg.debug(_L4_, "LogicLayer%d sends %p (%" PRIu64 ") to vault%u @ %" PRIu64 "\n", llID, (void*)event->getAddr(), event->getID().first, sendID, currentCycle);
             }
             //if we have cache, send access to it
             if (isCacheSimEn) {

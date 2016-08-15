@@ -50,10 +50,10 @@ VaultSimC::VaultSimC(ComponentId_t id, Params& params) : IntrospectedComponent( 
     if (!memorySystem)
         dbg.fatal(CALL_INFO, -1, "Unable to load Vault as sub-component\n");
 
-    CallbackBase<void, unsigned, uint64_t, uint64_t> *readDataCB =
-        new Callback<VaultSimC, void, unsigned, uint64_t, uint64_t>(this, &VaultSimC::readData);
-    CallbackBase<void, unsigned, uint64_t, uint64_t> *writeDataCB =
-        new Callback<VaultSimC, void, unsigned, uint64_t, uint64_t>(this, &VaultSimC::writeData);
+    CallbackBase<void, uint64_t, uint64_t, uint64_t> *readDataCB =
+        new Callback<VaultSimC, void, uint64_t, uint64_t, uint64_t>(this, &VaultSimC::readData);
+    CallbackBase<void, uint64_t, uint64_t, uint64_t> *writeDataCB =
+        new Callback<VaultSimC, void, uint64_t, uint64_t, uint64_t>(this, &VaultSimC::writeData);
 
     memorySystem->registerCallback(readDataCB, writeDataCB);
     dbg.output(CALL_INFO, "VaultSimC %u: made vault %u\n", vaultID, vaultID);
@@ -72,18 +72,18 @@ void VaultSimC::finish()
     memorySystem->finish();
 }
 
-void VaultSimC::readData(unsigned id, uint64_t addr, uint64_t clockcycle)
+void VaultSimC::readData(uint64_t id, uint64_t addr, uint64_t clockcycle)
 {
-    t2MEMap_t::iterator mi = transactionToMemEventMap.find(addr);
+    t2MEMap_t::iterator mi = transactionToMemEventMap.find(id);
     if (mi == transactionToMemEventMap.end()) {
-        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p\n", vaultID,(void*)addr);
+        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p (%" PRIu64 ")\n", vaultID, (void*)addr, id);
     }
 
     MemEvent *parentEvent = mi->second;
     MemEvent *event = parentEvent->makeResponse();
 
     memChan->send(event);
-    dbg.debug(_L6_, "VaultSimC %d: read req %p answered @%lu\n", vaultID, (void*)addr, clockcycle);
+    dbg.debug(_L6_, "VaultSimC %d: read req %p (%" PRIu64 ") answered @%lu\n", vaultID, (void*)addr, id, clockcycle);
 
     // delete old event
     delete parentEvent;
@@ -91,11 +91,11 @@ void VaultSimC::readData(unsigned id, uint64_t addr, uint64_t clockcycle)
     transactionToMemEventMap.erase(mi);
 }
 
-void VaultSimC::writeData(unsigned id, uint64_t addr, uint64_t clockcycle)
+void VaultSimC::writeData(uint64_t id, uint64_t addr, uint64_t clockcycle)
 {
-    t2MEMap_t::iterator mi = transactionToMemEventMap.find(addr);
+    t2MEMap_t::iterator mi = transactionToMemEventMap.find(id);
     if (mi == transactionToMemEventMap.end()) {
-        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p\n", vaultID,(void*)addr);
+        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p (%" PRIu64 ")\n", vaultID,(void*)addr, id);
     }
 
     MemEvent *parentEvent = mi->second;
@@ -103,7 +103,7 @@ void VaultSimC::writeData(unsigned id, uint64_t addr, uint64_t clockcycle)
 
     // send event
     memChan->send(event);
-    dbg.debug(_L6_, "VaultSimC %d: write req %p answered @%lu\n", vaultID, (void*)addr, clockcycle);
+    dbg.debug(_L6_, "VaultSimC %d: write req %p (%" PRIu64 ") answered @%lu\n", vaultID, (void*)addr, id, clockcycle);
 
     // delete old event
     delete parentEvent;
@@ -125,14 +125,15 @@ bool VaultSimC::clock(Cycle_t currentCycle)
 
         // new address for omitting quadID and vaultID bits / also setting lower bits zero to remove DRAMSim Warnings - anyway these bits is never used for mapping inside DRAMSim
         uint64_t new_addr = (event->getAddr() >> numBitShiftAddressDRAM) & ~((uint64_t)CacheLineSize-1);
+        uint64_t new_id = event->getID().first;
 
-        dbg.debug(_L6_, "VaultSimC %d: got a req %p (internal Addr: %p) @%lu\n", vaultID, (void*)event->getAddr(), (void*)new_addr, currentCycle);
+        dbg.debug(_L6_, "VaultSimC %d: got a req %p (internal Addr: %p) id:%" PRIu64 " @%lu\n", vaultID, (void*)event->getAddr(), (void*)new_addr, (void*)new_id, currentCycle);
 
         //TransactionType transType = convertType( event->getCmd() );
         //dbg.output(CALL_INFO, "transType=%d addr=%p\n", transType, (void*)event->getAddr());
 
         // save the memEvent eventID based on addr so we can respond to it correctly
-        transactionToMemEventMap.insert(pair<uint64_t, MemHierarchy::MemEvent*>(new_addr, event));
+        transactionToMemEventMap.insert(pair<uint64_t, MemHierarchy::MemEvent*>(new_id, event));
 
         bool isWrite = false;
         switch(event->getCmd()) {
@@ -149,26 +150,26 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         }
 
         // add to the Q
-        transaction_c transaction (isWrite, new_addr & ~((uint64_t)CacheLineSize-1));
+        transaction_c transaction (isWrite, new_addr & ~((uint64_t)CacheLineSize-1), new_id);
 
         #ifdef USE_VAULTSIM_HMC
         uint32_t HMCTypeEvent = (event->getMemFlags()) & 0x00ff; //only lower 8bits are used for hmc flags
         transaction.setHmcOpType(HMCTypeEvent);
         if (HMCTypeEvent == HMC_NONE || HMCTypeEvent == HMC_CANDIDATE) {
             transaction.resetAtomic();
-            dbg.debug(_L7_, "VaultSimC %d got a transaction for %p of type %s @%lu\n",
-                    vaultID, (void *)transaction.getAddr(), transaction.getHmcOpTypeStr(), currentCycle);
+            dbg.debug(_L7_, "VaultSimC %d got a transaction for %p (%" PRIu64 ") of type %s @%lu\n",
+                    vaultID, (void *)transaction.getAddr(), transaction.getId() ,transaction.getHmcOpTypeStr(), currentCycle);
         }
         else {
             transaction.setAtomic();
             transaction.setIsWrite();   //all hmc ops treat as write
-            dbg.debug(_L7_, "VaultSimC %d got an atomic req for %p of type %s @%lu\n",
-                    vaultID, (void *)transaction.getAddr(), transaction.getHmcOpTypeStr(), currentCycle);
+            dbg.debug(_L7_, "VaultSimC %d got an atomic req for %p (%" PRIu64 ") of type %s @%lu\n",
+                    vaultID, (void *)transaction.getAddr(), transaction.getId(), transaction.getHmcOpTypeStr(), currentCycle);
         }
         #else
         transaction.resetAtomic();
-        dbg.debug(_L7_, "VaultSimC %d got a transaction for %p @%lu (%lu %d)\n",
-                vaultID, (void*)transaction.getAddr(), currentCycle, event->getID().first, event->getID().second);
+        dbg.debug(_L7_, "VaultSimC %d got a transaction for %p (%" PRIu64 ") @%lu\n",
+                vaultID, (void*)transaction.getAddr(), transaction.getId(), currentCycle);
         #endif
 
         transQ.push_back(transaction);
@@ -179,12 +180,12 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         // send events off for processing
         transaction_c transaction = transQ.front();
         if ((ret = memorySystem->addTransaction(transaction))) {
-            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s succeeded %p @%lu\n",
-                    vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), currentCycle);
+            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s succeeded %p (%" PRIu64 ") @%lu\n",
+                    vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), transaction.getId(), currentCycle);
             transQ.pop_front();
         } else {
-            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s  failed %p @%lu\n",
-                    vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), currentCycle);
+            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s  failed %p (%" PRIu64 ") @%lu\n",
+                    vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), transaction.getId(), currentCycle);
             ret = false;
         }
     }

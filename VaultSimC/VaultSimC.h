@@ -29,7 +29,7 @@ using namespace SST;
 class VaultSimC : public IntrospectedComponent {
 private:
     typedef SST::Link memChan_t;
-    typedef multimap<uint64_t, MemHierarchy::MemEvent*> t2MEMap_t;      // Why multimap? a single address could be associatet to multiple events
+    typedef unordered_map<uint64_t, MemHierarchy::MemEvent*> t2MEMap_t;      // Why multimap? a single address could be associatet to multiple events
 
 public:
     /**
@@ -59,13 +59,13 @@ private:
      * readData
      * Vault calls this function when it is done with a read
      */
-    void readData(unsigned id, uint64_t addr, uint64_t clockcycle);
+    void readData(uint64_t id, uint64_t addr, uint64_t clockcycle);
 
     /**
      * writeData
      * Vault calls this function when it is done with a write
      */
-    void writeData(unsigned id, uint64_t addr, uint64_t clockcycle);
+    void writeData(uint64_t id, uint64_t addr, uint64_t clockcycle);
 
     /**
      *
