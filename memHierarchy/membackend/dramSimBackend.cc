@@ -33,12 +33,12 @@ DRAMSimMemory::DRAMSimMemory(Component *comp, Params &params) : MemBackend(comp,
     memSystem = DRAMSim::getMemorySystemInstance(
             deviceIniFilename, systemIniFilename, "", "", ramSize);
 
-    DRAMSim::Callback<DRAMSimMemory, void, unsigned int, uint64_t, uint64_t>
+    DRAMSim::Callback<DRAMSimMemory, void, unsigned int, uint64_t, uint64_t, uint64_t>
         *readDataCB, *writeDataCB;
 
-    readDataCB = new DRAMSim::Callback<DRAMSimMemory, void, unsigned int, uint64_t, uint64_t>(
+    readDataCB = new DRAMSim::Callback<DRAMSimMemory, void, unsigned int, uint64_t, uint64_t, uint64_t>(
             this, &DRAMSimMemory::dramSimDone);
-    writeDataCB = new DRAMSim::Callback<DRAMSimMemory, void, unsigned int, uint64_t, uint64_t>(
+    writeDataCB = new DRAMSim::Callback<DRAMSimMemory, void, unsigned int, uint64_t, uint64_t, uint64_t>(
             this, &DRAMSimMemory::dramSimDone);
 
     memSystem->RegisterCallbacks(readDataCB, writeDataCB, NULL);
@@ -73,7 +73,7 @@ void DRAMSimMemory::finish(){
 
 
 
-void DRAMSimMemory::dramSimDone(unsigned int id, uint64_t addr, uint64_t clockcycle){
+void DRAMSimMemory::dramSimDone(unsigned int id, uint64_t addr, uint64_t transid, uint64_t clockcycle){
     std::deque<DRAMReq *> &reqs = dramReqs[addr];
 #ifdef __SST_DEBUG_OUTPUT__
     ctrl->dbg.debug(_L10_, "Memory Request for %" PRIx64 " Finished [%zu reqs]\n", (Addr)addr, reqs.size());
