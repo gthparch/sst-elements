@@ -76,14 +76,14 @@ void VaultSimC::readData(uint64_t id, uint64_t addr, uint64_t clockcycle)
 {
     t2MEMap_t::iterator mi = transactionToMemEventMap.find(id);
     if (mi == transactionToMemEventMap.end()) {
-        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p (%" PRIu64 ")\n", vaultID, (void*)addr, id);
+        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p (id:%" PRIu64 ")\n", vaultID, (void*)addr, id);
     }
 
     MemEvent *parentEvent = mi->second;
     MemEvent *event = parentEvent->makeResponse();
 
     memChan->send(event);
-    dbg.debug(_L6_, "VaultSimC %d: read req %p (%" PRIu64 ") answered @%lu\n", vaultID, (void*)addr, id, clockcycle);
+    dbg.debug(_L6_, "VaultSimC %d: read req %p (id:%" PRIu64 ") answered @%lu\n", vaultID, (void*)addr, id, clockcycle);
 
     // delete old event
     delete parentEvent;
@@ -95,7 +95,7 @@ void VaultSimC::writeData(uint64_t id, uint64_t addr, uint64_t clockcycle)
 {
     t2MEMap_t::iterator mi = transactionToMemEventMap.find(id);
     if (mi == transactionToMemEventMap.end()) {
-        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p (%" PRIu64 ")\n", vaultID,(void*)addr, id);
+        dbg.fatal(CALL_INFO, -1, "Vault %d can't find transaction %p (id:%" PRIu64 ")\n", vaultID,(void*)addr, id);
     }
 
     MemEvent *parentEvent = mi->second;

@@ -174,7 +174,7 @@ void Vault::readComplete(unsigned idSys, uint64_t addr, uint64_t idTrans, uint64
 {
     // Check for atomic
     #ifdef USE_VAULTSIM_HMC
-    id2TransactionMap_t::iterator mi = onFlyHmcOps.find(addr);
+    id2TransactionMap_t::iterator mi = onFlyHmcOps.find(idTrans);
     #else
     id2TransactionMap_t::iterator mi = onFlyHmcOps.end();
     #endif
@@ -205,7 +205,7 @@ void Vault::writeComplete(unsigned idSys, uint64_t addr, uint64_t idTrans, uint6
 {
     // Check for atomic
     #ifdef USE_VAULTSIM_HMC
-    id2TransactionMap_t::iterator mi = onFlyHmcOps.find(addr);
+    id2TransactionMap_t::iterator mi = onFlyHmcOps.find(idTrans);
     #else
     id2TransactionMap_t::iterator mi = onFlyHmcOps.end();
     #endif
@@ -213,7 +213,7 @@ void Vault::writeComplete(unsigned idSys, uint64_t addr, uint64_t idTrans, uint6
     // Not found in map, not atomic
     if (mi == onFlyHmcOps.end()) {
         // DRAMSim returns ID that is useless to us
-        (*writeCallback)(id, addr, cycle);
+        (*writeCallback)(idTrans, addr, cycle);
         dbg.debug(_L8_, "Vault %d:hmc: simple %p (%" PRIu64 ") callback(write) @cycle=%lu\n",
                 id, (void*)addr, idTrans, cycle);
     }
@@ -224,7 +224,7 @@ void Vault::writeComplete(unsigned idSys, uint64_t addr, uint64_t idTrans, uint6
 
         // mi->second.setHmcOpState(WRITE_ANS_RECV);
         // return as a write since all hmc ops comes as read
-        (*writeCallback)(id, addr, cycle);
+        (*writeCallback)(idTrans, addr, cycle);
         dbg.debug(_L8_, "Vault %d:hmc: Atomic op %p (bank%u) callback at cycle=%lu\n",
                 id, (void*)mi->second.getAddr(), mi->second.getBankNo(), cycle);
 
@@ -457,7 +457,7 @@ void Vault::issueAtomicSecondMemoryPhase(id2TransactionMap_t::iterator mi)
         }
 
         memorySystem->addTransaction(true, mi->second.getAddr(), mi->second.getId());
-        dbg.debug(_L9_, "Vault %d:hmc: Atomic op %p (id:) (bank%u) write has been issued (2nd phase) @cycle=%lu\n",
+        dbg.debug(_L9_, "Vault %d:hmc: Atomic op %p (id:%" PRIu64 ") (bank%u) write has been issued (2nd phase) @cycle=%lu\n",
                 id, (void*)mi->second.getAddr(), mi->second.getId(), mi->second.getBankNo(), currentClockCycle);
         // mi->second.setHmcOpState(WRITE_ISSUED);
         break;
