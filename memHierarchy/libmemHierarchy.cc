@@ -31,7 +31,6 @@
 #include "membackend/memBackend.h"
 #include "membackend/simpleMemBackend.h"
 #include "membackend/vaultSimBackend.h"
-#include "membackend/ramulatorBackend.h"
 #include "networkMemInspector.h"
 
 #ifdef HAVE_GOBLIN_HMCSIM
@@ -522,16 +521,6 @@ static const ElementInfoParam simpleMem_params[] = {
     {NULL, NULL}
 };
 
-static SubComponent* create_Mem_Ramulator(Component* comp, Params& params){
-    return new Ramulator(comp, params);
-}
-
-static const ElementInfoParam ramulator_params[] = {
-    { "verbose",          "Sets the verbosity of the backend output", "0" },
-    { "config",           "Ramulator config file", NULL },
-    { "cacheline",        "Cacheline size", "64" },
-    {NULL, NULL}
-};
 
 
 #if defined(HAVE_LIBDRAMSIM)
@@ -761,15 +750,6 @@ static const ElementInfoSubComponent subcomponents[] = {
         NULL, /* Advanced help */
         create_Mem_SimpleSim, /* Module Alloc w/ params */
         simpleMem_params,
-        NULL, /* statistics */
-        "SST::MemHierarchy::MemBackend"
-    },
-    {
-        "ramulator",
-        "Ramulator",
-        NULL, /* Advanced help */
-        create_Mem_Ramulator, /* Module Alloc w/ params */
-        ramulator_params,
         NULL, /* statistics */
         "SST::MemHierarchy::MemBackend"
     },

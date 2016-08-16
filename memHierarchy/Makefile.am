@@ -4,7 +4,6 @@
 
 AM_CPPFLAGS = \
 	$(BOOST_CPPFLAGS) $(MPI_CPPFLAGS) \
-	-DRAMULATOR \
 	-g
 
 
@@ -29,26 +28,6 @@ libmemHierarchy_la_SOURCES = \
 	membackend/simpleMemBackend.h \
 	membackend/vaultSimBackend.h \
 	membackend/vaultSimBackend.cc \
-	membackend/ramulatorBackend.cc \
-	membackend/ramulatorBackend.h \
-    membackend/ramulator/src/Cache.cpp \
-    membackend/ramulator/src/Config.cpp \
-    membackend/ramulator/src/Controller.cpp \
-    membackend/ramulator/src/HBM.cpp \
-    membackend/ramulator/src/MemoryFactory.cpp \
-    membackend/ramulator/src/Refresh.cpp \
-    membackend/ramulator/src/StatType.cpp \
-    membackend/ramulator/src/ALDRAM.cpp \
-    membackend/ramulator/src/DDR3.cpp \
-    membackend/ramulator/src/DDR4.cpp \
-    membackend/ramulator/src/DSARP.cpp \
-    membackend/ramulator/src/GDDR5.cpp \
-    membackend/ramulator/src/LPDDR3.cpp \
-    membackend/ramulator/src/LPDDR4.cpp \
-    membackend/ramulator/src/SALP.cpp \
-    membackend/ramulator/src/TLDRAM.cpp \
-    membackend/ramulator/src/WideIO.cpp \
-    membackend/ramulator/src/WideIO2.cpp \
 	memEvent.h \
 	memNIC.h \
 	memNIC.cc \
