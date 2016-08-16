@@ -51,7 +51,8 @@ void VaultSimMemory::handleCubeEvent(SST::Event *event){
     if (ri != outToCubes.end()) {
       ctrl->handleMemResponse(ri->second);
       outToCubes.erase(ri);
-      delete event;
+      //delete event;
+      delete ev;
     }
     else ctrl->dbg.fatal(CALL_INFO, -1, "Could not match incoming request from cubes\n");
   }
