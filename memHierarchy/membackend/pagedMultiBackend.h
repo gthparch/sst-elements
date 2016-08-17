@@ -203,7 +203,7 @@ private:
     reqToPage_t swapToSlow_Writes;
     reqToPage_t swapToFast_Reads;
 
-    void dramSimDone(unsigned int id, uint64_t addr, uint64_t transid, uint64_t clockcycle);
+    void dramSimDone(unsigned int id, uint64_t addr, uint64_t clockcycle);
     void swapDone(pageInfo *, uint64_t);
     void moveToFast(pageInfo &);
     void moveToSlow(pageInfo *);

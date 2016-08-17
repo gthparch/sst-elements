@@ -110,13 +110,13 @@ pagedMultiMemory::pagedMultiMemory(Component *comp, Params &params) : DRAMSimMem
 
     if (modelSwaps) {
         // use our own callbacks
-        DRAMSim::Callback<pagedMultiMemory, void, unsigned int, uint64_t, uint64_t, uint64_t>
+        DRAMSim::Callback<pagedMultiMemory, void, unsigned int, uint64_t, uint64_t>
             *readDataCB, *writeDataCB;
 
         readDataCB = new DRAMSim::Callback<pagedMultiMemory, void, unsigned int,
-                                           uint64_t, uint64_t, uint64_t>(this, &pagedMultiMemory::dramSimDone);
+                                           uint64_t, uint64_t>(this, &pagedMultiMemory::dramSimDone);
         writeDataCB = new DRAMSim::Callback<pagedMultiMemory, void, unsigned int,
-                                            uint64_t, uint64_t, uint64_t>(this, &pagedMultiMemory::dramSimDone);
+                                           uint64_t, uint64_t>(this, &pagedMultiMemory::dramSimDone);
 
         memSystem->RegisterCallbacks(readDataCB, writeDataCB, NULL);
     }
@@ -561,7 +561,7 @@ void pagedMultiMemory::moveToSlow(pageInfo *page) {
 
 
 
-void pagedMultiMemory::dramSimDone(unsigned int id, uint64_t addr, uint64_t transid, uint64_t clockcycle){
+void pagedMultiMemory::dramSimDone(unsigned int id, uint64_t addr, uint64_t clockcycle){
     assert(dramReqs.find(addr) != dramReqs.end());
     std::deque<DRAMReq *> &reqs = dramReqs[addr];
     ctrl->dbg.debug(_L10_, "Memory Request for %" PRIx64 " Finished [%zu reqs]\n", (Addr)addr, reqs.size());
