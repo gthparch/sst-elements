@@ -74,10 +74,10 @@ Vault::Vault(Component *comp, Params &params) : SubComponent(comp)
 
     memorySystem = DRAMSim::getMemorySystemInstance(deviceIniFilename, systemIniFilename, pwd, traceFilename, ramSize);
 
-    DRAMSim::Callback<Vault, void, unsigned, uint64_t, uint64_t, uint64_t> *readDataCB =
-        new DRAMSim::Callback<Vault, void, unsigned, uint64_t, uint64_t, uint64_t>(this, &Vault::readComplete);
-    DRAMSim::Callback<Vault, void, unsigned, uint64_t, uint64_t, uint64_t> *writeDataCB =
-        new DRAMSim::Callback<Vault, void, unsigned, uint64_t, uint64_t, uint64_t>(this, &Vault::writeComplete);
+    DRAMSim::CallbackID<Vault, void, unsigned, uint64_t, uint64_t, uint64_t> *readDataCB =
+        new DRAMSim::CallbackID<Vault, void, unsigned, uint64_t, uint64_t, uint64_t>(this, &Vault::readComplete);
+    DRAMSim::CallbackID<Vault, void, unsigned, uint64_t, uint64_t, uint64_t> *writeDataCB =
+        new DRAMSim::CallbackID<Vault, void, unsigned, uint64_t, uint64_t, uint64_t>(this, &Vault::writeComplete);
 
     memorySystem->RegisterCallbacks(readDataCB, writeDataCB, NULL);
 
