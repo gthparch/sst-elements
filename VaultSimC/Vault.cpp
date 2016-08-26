@@ -260,7 +260,7 @@ void Vault::update()
     if (currentDRAMSimUpdateWindowNum == 0) {
         currentDRAMSimUpdateBudget = DRAMSimUpdatePerWindow;
         currentDRAMSimUpdateWindowNum = DRAMSimUpdateWindowSize;
-        dbg.debug(_L10_, "Vault %d: DRAMSim Update Budget restored to %d @cycle=%lu\n", id, DRAMSimUpdatePerWindow, currentClockCycle);
+        //dbg.debug(_L10_, "Vault %d: DRAMSim Update Budget restored to %d @cycle=%lu\n", id, DRAMSimUpdatePerWindow, currentClockCycle);
     }
 
     // If we are in compute phase, check for cycle compute done
@@ -302,7 +302,7 @@ void Vault::update()
     if (currentHMCOpsIssueLimitWindowNum==0) {
         currentHMCOpsIssueLimitWindowNum = HMCOpsIssueLimitWindowSize;
         currentHMCOpsIssueBudget = HMCOpsIssueLimitPerWindow;
-        dbg.debug(_L10_, "Vault %d: onFlyHMC Budget restored to %d @cycle=%lu\n", id, currentHMCOpsIssueBudget, currentClockCycle);
+        //dbg.debug(_L10_, "Vault %d: onFlyHMC Budget restored to %d @cycle=%lu\n", id, currentHMCOpsIssueBudget, currentClockCycle);
     }
 
 }
@@ -321,6 +321,9 @@ bool Vault::addTransaction(transaction_c transaction)
     /* statistics & insert to Queue*/
     statTotalTransactions->addData(1);
     transQ.push_back(transaction);
+
+    // dbg.debug(_L9_, "Vault %d: add transaction done %p (id:%" PRIu64 ") issued @cycle=%lu\n",
+    //     id, (void*)transaction.getAddr(), transaction.getId(), currentClockCycle);
 
     updateQueue();
 
@@ -476,7 +479,7 @@ void Vault::skipAtomicSecondMemoryPhase(id2TransactionMap_t::iterator mi)
 
     // mi->second.setHmcOpState(WRITE_ANS_RECV);
     // return as a write since all hmc ops comes as read
-    (*writeCallback)(id, mi->second.getAddr(), currentClockCycle);
+    (*writeCallback)(mi->second.getId(), mi->second.getAddr(), currentClockCycle);
 
     /* statistics */
     mi->second.writeDoneCycle = currentClockCycle;

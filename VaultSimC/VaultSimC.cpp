@@ -157,18 +157,18 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         transaction.setHmcOpType(HMCTypeEvent);
         if (HMCTypeEvent == HMC_NONE || HMCTypeEvent == HMC_CANDIDATE) {
             transaction.resetAtomic();
-            dbg.debug(_L7_, "VaultSimC %d got a transaction for %p (%" PRIu64 ") of type %s @%lu\n",
+            dbg.debug(_L7_, "VaultSimC %d got a transaction for %p (id:%" PRIu64 ") of type %s @%lu\n",
                     vaultID, (void *)transaction.getAddr(), transaction.getId() ,transaction.getHmcOpTypeStr(), currentCycle);
         }
         else {
             transaction.setAtomic();
             transaction.setIsWrite();   //all hmc ops treat as write
-            dbg.debug(_L7_, "VaultSimC %d got an atomic req for %p (%" PRIu64 ") of type %s @%lu\n",
+            dbg.debug(_L7_, "VaultSimC %d got an atomic req for %p (id:%" PRIu64 ") of type %s @%lu\n",
                     vaultID, (void *)transaction.getAddr(), transaction.getId(), transaction.getHmcOpTypeStr(), currentCycle);
         }
         #else
         transaction.resetAtomic();
-        dbg.debug(_L7_, "VaultSimC %d got a transaction for %p (%" PRIu64 ") @%lu\n",
+        dbg.debug(_L7_, "VaultSimC %d got a transaction for %p (id:%" PRIu64 ") @%lu\n",
                 vaultID, (void*)transaction.getAddr(), transaction.getId(), currentCycle);
         #endif
 
@@ -180,11 +180,11 @@ bool VaultSimC::clock(Cycle_t currentCycle)
         // send events off for processing
         transaction_c transaction = transQ.front();
         if ((ret = memorySystem->addTransaction(transaction))) {
-            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s succeeded %p (%" PRIu64 ") @%lu\n",
+            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s succeeded %p (id:%" PRIu64 ") @%lu\n",
                     vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), transaction.getId(), currentCycle);
             transQ.pop_front();
         } else {
-            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s  failed %p (%" PRIu64 ") @%lu\n",
+            dbg.debug(_L7_, "VaultSimC %d AddTransaction %s  failed %p (id:%" PRIu64 ") @%lu\n",
                     vaultID, transaction.getIsWrite() ? "write" : "read", (void *)transaction.getAddr(), transaction.getId(), currentCycle);
             ret = false;
         }
