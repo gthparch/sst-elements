@@ -45,12 +45,12 @@ using namespace SST;
 
 class Vault : public SubComponent {
 private:
-    typedef CallbackBase<void, unsigned, uint64_t, uint64_t> callback_t;
-    typedef unordered_map<uint64_t, transaction_c> addr2TransactionMap_t;
+    typedef CallbackBase<void, uint64_t, uint64_t, uint64_t> callback_t;
+    typedef unordered_map<uint64_t, transaction_c> id2TransactionMap_t;
     typedef unordered_map<unsigned, bool> bank2BoolMap_t;
     typedef unordered_map<unsigned, uint64_t> bank2CycleMap_t;
-    typedef unordered_map<unsigned, uint64_t> bank2AddrMap_t;
-    typedef vector<transaction_c> transQ_t;
+    typedef unordered_map<unsigned, uint64_t> bank2IdMap_t;
+    typedef vector<transaction_c> transQ_t; // FIXME: use more efficient container
 
 public:
     /**
@@ -93,13 +93,13 @@ public:
      * readComplete
      * DRAMSim calls this function when it is done with a read
      */
-    void readComplete(unsigned id, uint64_t addr, uint64_t cycle);
+    void readComplete(unsigned idSys, uint64_t addr, uint64_t idTrans, uint64_t cycle);
 
     /**
      * writeComplete
      * DRAMSim calls this function when it is done with a write
      */
-    void writeComplete(unsigned id, uint64_t addr, uint64_t cycle);
+    void writeComplete(unsigned idSys, uint64_t addr, uint64_t idTrans, uint64_t cycle);
 
     /**
      * getId
@@ -116,10 +116,10 @@ private:
     /**
      * issueAtomicPhases
      */
-    void issueAtomicFirstMemoryPhase(addr2TransactionMap_t::iterator mi);
-    void issueAtomicSecondMemoryPhase(addr2TransactionMap_t::iterator mi);
-    void skipAtomicSecondMemoryPhase(addr2TransactionMap_t::iterator mi);
-    void issueAtomicComputePhase(addr2TransactionMap_t::iterator mi);
+    void issueAtomicFirstMemoryPhase(id2TransactionMap_t::iterator mi);
+    void issueAtomicSecondMemoryPhase(id2TransactionMap_t::iterator mi);
+    void skipAtomicSecondMemoryPhase(id2TransactionMap_t::iterator mi);
+    void issueAtomicComputePhase(id2TransactionMap_t::iterator mi);
 
 
     /**
@@ -141,9 +141,9 @@ private:
     inline uint64_t getComputeDoneCycle(unsigned bankId) { return computeDoneCycleMap[bankId]; }
     inline void eraseComputeDoneCycle(unsigned bankId) { computeDoneCycleMap.erase(bankId); }
 
-    inline void setAddrCompute(unsigned bankId, uint64_t addr) { addrComputeMap[bankId] = addr; }
-    inline uint64_t getAddrCompute(unsigned bankId) { return addrComputeMap[bankId]; }
-    inline void eraseAddrCompute(unsigned bankId) { addrComputeMap.erase(bankId); }
+    inline void setIdCompute(unsigned bankId, uint64_t id) { idComputeMap[bankId] = id; }
+    inline uint64_t getIdCompute(unsigned bankId) { return idComputeMap[bankId]; }
+    inline void eraseIdCompute(unsigned bankId) { idComputeMap.erase(bankId); }
 
     /**
      *  Stats
@@ -189,12 +189,12 @@ private:
     //Stat Format
     int statsFormat;                             // Type of Stat output 0:Defualt 1:Macsim (Default Value is set to 0)
 
-    addr2TransactionMap_t onFlyHmcOps;           // Currently issued atomic ops
+    id2TransactionMap_t onFlyHmcOps;           // Currently issued atomic ops
     bank2BoolMap_t bankBusyMap;                  // Current Busy Banks
     transQ_t transQ;                             // Transaction Queue
     list<unsigned> computePhaseEnabledBanks;     // Current Compute Phase Insturctions (same size as bankBusyMap)
     bank2CycleMap_t computeDoneCycleMap;         // Current Compute Done Cycle ((same size as bankBusyMap)
-    bank2AddrMap_t addrComputeMap;
+    bank2IdMap_t idComputeMap;
 
     // Limits
     int HMCOpsIssueLimitPerWindow;

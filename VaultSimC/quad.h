@@ -1,10 +1,10 @@
 // Copyright 2009-2015 Sandia Corporation. Under the terms
 // of Contract DE-AC04-94AL85000 with Sandia Corporation, the U.S.
 // Government retains certain rights in this software.
-// 
+//
 // Copyright (c) 2009-2015, Sandia Corporation
 // All rights reserved.
-// 
+//
 // This file is part of the SST software package. For license
 // information, see the LICENSE file in the top level directory of the
 // distribution.
@@ -44,7 +44,7 @@ private:
     typedef vector<memChan_t*> memChans_t;
 
 public:
-    /** 
+    /**
      * Constructor
      */
     quad(ComponentId_t id, Params& params);
@@ -56,7 +56,7 @@ public:
     void finish();
 
 private:
-    /** 
+    /**
      * Step call for quad
      */
     bool clock(Cycle_t);
@@ -71,11 +71,11 @@ private:
         #define FILED1_LENGTH 45
         #define FILED2_LENGTH 20
         #define FILED3_LENGTH 30
-    
+
         ofs.setf(ios::left, ios::adjustfield);
         string capitalized_suffixed_name = boost::to_upper_copy(name + "_" + suffix);
         ofs << setw(FILED1_LENGTH) << capitalized_suffixed_name;
-    
+
         ofs.setf(ios::right, ios::adjustfield);
         ofs << setw(FILED2_LENGTH) << count << setw(FILED3_LENGTH) << count << endl << endl;
     }

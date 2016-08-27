@@ -56,7 +56,7 @@ struct pageInfo {
   void record(const DRAMReq *req, const bool collectStats, const uint64_t pAddr, const bool limitTouch) {
         uint64_t addr = req->baseAddr_ + req->amtInProcess_;
         bool isWrite = req->isWrite_;
-        
+
         // record the pageAddr
         assert((pageAddr == 0) || (pAddr == pageAddr));
         pageAddr = pAddr;
@@ -80,12 +80,12 @@ struct pageInfo {
                 scanLeng = 0;
             }
         }
-         
+
         if (0 == collectStats) {
             lastRef = addr;
             return;
         }
-        
+
         // note: this is slow, and only works if directory controller
         // is modified to send along the requestor info
         if (1 == collectStats) {
@@ -125,12 +125,12 @@ struct pageInfo {
 	  }
 	  fprintf(outF, " %" PRIu64, (uint64_t)rqstrs.size());
 	  fprintf(outF, "\n");
-	}	  
+	}
 
         //clear
 	for (int i = 0; i < LAST_CASE; ++i) {
 	  accPat[i] = 0;
-	} 
+	}
 	rqstrs.clear();
     }
 
@@ -173,14 +173,14 @@ private:
                   BiLRU, // bimodal LRU
                   SCLRU, // scan aware
                   LAST_STRAT} pageReplaceStrat_t;
-    pageReplaceStrat_t replaceStrat; 
+    pageReplaceStrat_t replaceStrat;
 
     bool dramBackpressure;
 
     bool checkAdd(pageInfo &page);
     void do_FIFO_LRU(DRAMReq *req, pageInfo &page, bool &inFast, bool &swapping);
     void do_LFU(DRAMReq *req, pageInfo &page, bool &inFast, bool &swapping);
-    
+
     void printAccStats();
     queue<DRAMReq *> dramQ;
     void queueRequest(DRAMReq *r) {
@@ -193,9 +193,9 @@ private:
     // swap tracking stuff
     const bool modelSwaps = 1;
     map<uint64_t, list<DRAMReq*> > waitingReqs;
-public:    
+public:
     class MemCtrlEvent;
-private:    
+private:
     typedef map<MemCtrlEvent *, pageInfo*> evToPage_t;
     typedef map<DRAMReq *, pageInfo*> reqToPage_t;
     evToPage_t swapToSlow_Reads;
@@ -209,7 +209,7 @@ private:
     void moveToSlow(pageInfo *);
     bool pageIsSwapping(const pageInfo &page);
 
-public:    
+public:
     class MemCtrlEvent : public SST::Event {
     public:
         MemCtrlEvent(DRAMReq* req) : SST::Event(), req(req)
@@ -217,16 +217,16 @@ public:
 
         DRAMReq *req;
 
-    private:   
+    private:
         MemCtrlEvent() {} // For Serialization only
-        
+
     public:
         void serialize_order(SST::Core::Serialization::serializer &ser) {
             Event::serialize_order(ser);
             ser & req;  // Cannot serialize pointers unless they are a serializable object
         }
-        
-        ImplementSerializable(SST::MemHierarchy::pagedMultiMemory::MemCtrlEvent);     
+
+        ImplementSerializable(SST::MemHierarchy::pagedMultiMemory::MemCtrlEvent);
 };
 
     typedef map<uint64_t, pageInfo> pageMap_t;

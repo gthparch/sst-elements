@@ -89,14 +89,20 @@ public:
      */
     transaction_c() : isWrite(false), addr(0), isAtomic(false), hmcType(HMC_NONE), transactionId(0), hmcOpState(NO_STATE), flagPrintDbgHMC(0) {}
 
-    transaction_c(bool _isWrite, uint64_t _addr) :
-        isWrite(_isWrite), addr(_addr), isAtomic(false), hmcType(HMC_NONE), transactionId(0), hmcOpState(NO_STATE), flagPrintDbgHMC(0) {}
+    transaction_c(bool _isWrite, uint64_t _addr, uint64_t _id) :
+        isWrite(_isWrite), addr(_addr), id(_id), isAtomic(false), hmcType(HMC_NONE), transactionId(0), hmcOpState(NO_STATE), flagPrintDbgHMC(0) {}
 
     /**
      * addr Member Fuctions
      */
     uint64_t getAddr() { return addr; }
     void setAddr( uint64_t addr_) { addr = addr_; }
+
+    /**
+     * id Member Fuctions
+     */
+    uint64_t getId() { return id; }
+    void setId( uint64_t id_) { id = id_; }
 
     /**
      * isWrite Member Fuctions
@@ -211,6 +217,7 @@ private:
     //transaction properties
     bool isWrite;
     uint64_t addr;
+    uint64_t id;
     unsigned int bankNo;
     bool isAtomic;
     uint32_t hmcType;              //HMC_Type Enum
