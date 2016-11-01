@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <set>
 #include <vector>
+#include <queue>
 #include <list>
 #include <sstream>
 #include <fstream>
@@ -51,6 +52,7 @@ private:
     typedef unordered_map<unsigned, uint64_t> bank2CycleMap_t;
     typedef unordered_map<unsigned, uint64_t> bank2IdMap_t;
     typedef vector<transaction_c> transQ_t; // FIXME: use more efficient container
+    typedef queue<transaction_c> transFIFO_t;
 
 public:
     /**
@@ -74,6 +76,7 @@ public:
     /**
      * update
      * Vaultsim handle to update DRAMSIM, it also increases the cycle
+     * main function called from VaultSimC
      */
     void update();
 
@@ -114,11 +117,19 @@ private:
     void updateQueue();
 
     /**
+     * updateComputePhase
+     * will take care of bank locking and functional units number limit
+     * Note: HmcFunctionalUnit_Num is per vault
+     */
+    void updateComputePhase();
+
+    /**
      * issueAtomicPhases
      */
     void issueAtomicFirstMemoryPhase(id2TransactionMap_t::iterator mi);
     void issueAtomicSecondMemoryPhase(id2TransactionMap_t::iterator mi);
     void skipAtomicSecondMemoryPhase(id2TransactionMap_t::iterator mi);
+    void initiateAtomicComputePhase(id2TransactionMap_t::iterator mi);
     void issueAtomicComputePhase(id2TransactionMap_t::iterator mi);
 
 
@@ -189,12 +200,16 @@ private:
     //Stat Format
     int statsFormat;                             // Type of Stat output 0:Defualt 1:Macsim (Default Value is set to 0)
 
-    id2TransactionMap_t onFlyHmcOps;           // Currently issued atomic ops
-    bank2BoolMap_t bankBusyMap;                  // Current Busy Banks
     transQ_t transQ;                             // Transaction Queue
+    id2TransactionMap_t onFlyHmcOps;             // Currently issued atomic ops
+
+    bank2BoolMap_t bankBusyMap;                  // Current Busy Banks
     list<unsigned> computePhaseEnabledBanks;     // Current Compute Phase Insturctions (same size as bankBusyMap)
     bank2CycleMap_t computeDoneCycleMap;         // Current Compute Done Cycle ((same size as bankBusyMap)
     bank2IdMap_t idComputeMap;
+
+    id2TransactionMap_t onFlyComputeHmcOps;      // Currently issued atomic ops in compute phase
+    transFIFO_t waitListComputeHmcOps;           // Waitlist compute phase
 
     // Limits
     int HMCOpsIssueLimitPerWindow;

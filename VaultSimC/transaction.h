@@ -218,7 +218,7 @@ private:
     bool isWrite;
     uint64_t addr;
     uint64_t id;
-    unsigned int bankNo;
+    unsigned bankNo;
     bool isAtomic;
     uint32_t hmcType;              //HMC_Type Enum
 
