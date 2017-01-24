@@ -91,8 +91,8 @@ private:
     /** Handler for incoming prefetching events. */
     void handlePrefetchEvent(SST::Event *event);
     
-    /** Self-Event handler for this component */
-    void handleSelfEvent(SST::Event *event);
+    /** Self-Event prefetch handler for this component */
+    void processPrefetchEvent(SST::Event *event);
     
     /** Function processes incomming access requests from HiLv$ or the CPU
         It appropriately redirects requests to Top and/or Bottom controllers.  */
@@ -180,9 +180,6 @@ private:
     /** Print cache line for debugging */
     void printLine(Addr addr);
 
-    /** Find out if number is a power of 2 */
-    bool isPowerOfTwo(uint x){ return (x & (x - 1)) == 0; }
-    
     /** Timestamp getter */
     uint64 getTimestamp(){ return timestamp_; }
 
@@ -206,6 +203,18 @@ private:
         // MSHR occupancy
         statMSHROccupancy->addData(mshr_->getSize());
         
+        // If we have waiting requests send them now
+        requestsThisCycle_ = 0;
+        while (!requestBuffer_.empty()) {
+            if (requestsThisCycle_ == maxRequestsPerCycle_) {
+                break;
+            }
+            processEvent(requestBuffer_.front(), false);
+            requestBuffer_.pop();
+            requestsThisCycle_++;
+            queuesEmpty = false;
+        }
+
         // Disable lower-level cache clocks if they're idle
         if (queuesEmpty && nicIdle && clockIsOn_) {
             clockIsOn_ = false;
@@ -259,11 +268,11 @@ private:
         uint lineSize_;
         uint MSHRSize_;
         bool L1_;
-        bool LLC_;
-        bool LL_;
         bool allNoncacheableRequests_;
         SimTime_t maxWaitTime_;
         string type_;
+        bool L2_;
+        bool L3_;
     };
     
     CacheConfig             cf_;
@@ -271,7 +280,7 @@ private:
     CacheListener*          listener_;
     vector<Link*>*          lowNetPorts_;
     Link*                   highNetPort_;
-    Link*                   selfLink_;
+    Link*                   prefetchLink_;
     Link*                   maxWaitSelfLink_;
     MemNIC*                 bottomNetworkLink_;
     MemNIC*                 topNetworkLink_;
@@ -282,11 +291,15 @@ private:
     MSHR*                   mshr_;
     MSHR*                   mshrNoncacheable_;
     CoherencyController*    coherenceMgr;
-    queue<pair<SST::Event*, uint64> >   incomingEventQueue_;
-    uint64                  accessLatency_;
-    uint64                  tagLatency_;
-    uint64                  mshrLatency_;
-    uint64                  timestamp_;
+    uint64_t                accessLatency_;
+    uint64_t                tagLatency_;
+    uint64_t                mshrLatency_;
+    uint64_t                timestamp_;
+    int                     dropPrefetchLevel_;
+    int                     maxOutstandingPrefetch_;
+    int                     maxRequestsPerCycle_;
+    int                     requestsThisCycle_;
+    std::queue<MemEvent*>   requestBuffer_;
     Clock::Handler<Cache>*  clockHandler_;
     TimeConverter*          defaultTimeBase_;
     std::map<string, LinkId_t>     nameMap_;

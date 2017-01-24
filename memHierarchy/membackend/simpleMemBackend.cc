@@ -18,7 +18,7 @@ using namespace SST::MemHierarchy;
 
 /*------------------------------- Simple Backend ------------------------------- */
 SimpleMemory::SimpleMemory(Component *comp, Params &params) : MemBackend(comp, params){
-    std::string access_time = params.find_string("access_time", "100 ns");
+    std::string access_time = params.find<std::string>("access_time", "100 ns");
     self_link = ctrl->configureSelfLink("Self", access_time,
             new Event::Handler<SimpleMemory>(this, &SimpleMemory::handleSelfEvent));
 }
@@ -31,8 +31,11 @@ void SimpleMemory::handleSelfEvent(SST::Event *event){
 }
 
 bool SimpleMemory::issueRequest(DRAMReq *req){
+#ifdef __SST_DEBUG_OUTPUT__
     uint64_t addr = req->baseAddr_ + req->amtInProcess_;
     ctrl->dbg.debug(_L10_, "Issued transaction for address %" PRIx64 "\n", (Addr)addr);
+#endif
     self_link->send(1, new MemCtrlEvent(req));
     return true;
 }
+

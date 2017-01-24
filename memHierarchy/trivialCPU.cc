@@ -10,7 +10,6 @@
 // distribution.
 
 #include <sst_config.h>
-#include <sst/core/serialization.h>
 #include "trivialCPU.h"
 
 #include <assert.h>
@@ -31,30 +30,31 @@ trivialCPU::trivialCPU(ComponentId_t id, Params& params) :
 
     // Restart the RNG to ensure completely consistent results (XML->Python causes
     // changes in the ComponentId_t ordering which fails to pass tests correctly.
-    uint32_t z_seed = params.find_integer("rngseed", 7);
+    uint32_t z_seed = params.find<uint32_t>("rngseed", 7);
     rng.restart(z_seed, 13);
 
     out.init("", 0, 0, Output::STDOUT);
 
-	if ( params.find("commFreq") == params.end() ) {
-		out.fatal(CALL_INFO, -1,"couldn't find communication frequency\n");
-	}
-	commFreq = strtol( params[ "commFreq" ].c_str(), NULL, 0 );
+    commFreq = params.find<int>("commFreq", -1);
+    if (commFreq < 0) {
+        out.fatal(CALL_INFO, -1,"couldn't find communication frequency\n");
+    }
+    
+    maxAddr = params.find<uint64_t>("memSize", -1) -1;
+    
+    if ( !maxAddr ) {
+        out.fatal(CALL_INFO, -1, "Must set memSize\n");
+    }
 
-	maxAddr = (uint64_t)params.find_integer("memSize", -1) -1;
-	if ( !maxAddr ) {
-		out.fatal(CALL_INFO, -1, "Must set memSize\n");
-	}
+    do_write = params.find<bool>("do_write", 1);
 
-	do_write = (bool)params.find_integer("do_write", 1);
+    numLS = params.find<int>("num_loadstore", -1);
 
-    numLS = params.find_integer("num_loadstore", -1);
-
-    noncacheableRangeStart = (uint64_t)params.find_integer("noncacheableRangeStart", 0);
-    noncacheableRangeEnd = (uint64_t)params.find_integer("noncacheableRangeEnd", 0);
+    noncacheableRangeStart = params.find<uint64_t>("noncacheableRangeStart", 0);
+    noncacheableRangeEnd = params.find<uint64_t>("noncacheableRangeEnd", 0);
 
 
-	// tell the simulator not to end without us
+    // tell the simulator not to end without us
     registerAsPrimaryComponent();
     primaryComponentDoNotEndSim();
 

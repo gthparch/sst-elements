@@ -115,9 +115,9 @@ libmemHierarchy_la_SOURCES += membackend/dramSimBackend.cc \
 nobase_sst_HEADERS += membackend/dramSimBackend.h
 AM_CPPFLAGS += $(DRAMSIM_CPPFLAGS) -DHAVE_LIBDRAMSIM
 
-libmemHierarchy_la_SOURCES += membackend/pagedMultiBackend.cc \
-	membackend/pagedMultiBackend.h
-nobase_sst_HEADERS += membackend/pagedMultiBackend.h
+#libmemHierarchy_la_SOURCES += membackend/pagedMultiBackend.cc \
+	#membackend/pagedMultiBackend.h
+#nobase_sst_HEADERS += membackend/pagedMultiBackend.h
 endif
 
 if HAVE_HYBRIDSIM

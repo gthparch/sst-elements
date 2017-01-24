@@ -594,17 +594,15 @@ uint64_t MyNetwork::convertToGlobalAddress(uint64_t localAddress, uint64_t range
 
 void MyNetwork::configureParameters(SST::Params& params) 
 {
-  int debugLevel = params.find_integer("debug_level", 0);
-  Output::output_location_t outputLocation =
-    (Output::output_location_t)params.find_integer("debug", 0);
+  int debugLevel = params.find<int>("debug_level", 0);
+  if (debugLevel < ERROR || debugLevel > L6) 
+    dbg.fatal(CALL_INFO, -1, "Debugging level must be between 0 and 10. \n");
 
   string name = "[" + this->getName() + "] ";
-  dbg.init(name.c_str(), debugLevel, 0, outputLocation);
-  if (debugLevel < 0 || debugLevel > 10) {
-    dbg.fatal(CALL_INFO, -1, "Debugging level must be betwee 0 and 10. \n");
-  }
+  int debugOutput = params.find<int>("debug", (int)Output::NONE);
+  dbg.init(name.c_str(), debugLevel, 0, (Output::output_location_t)debugOutput);
 
-  int debugAddr = params.find_integer("debug_addr", -1);
+  int debugAddr = params.find<uint64_t>("debug_addr", -1);
   if (debugAddr == -1) {
     DEBUG_ADDR = (Addr)debugAddr;
     DEBUG_ALL = true;
@@ -613,15 +611,15 @@ void MyNetwork::configureParameters(SST::Params& params)
     DEBUG_ALL = false;
   }
 
-  addressTranslationEnabled = params.find_integer("enable_address_translaction", 0);
+  addressTranslationEnabled = params.find<bool>("enable_address_translaction", 0);
 
-  packetSize = params.find_integer("packet_size", 64);
+  packetSize = params.find<uint64_t>("packet_size", 64);
 
-  unsigned PIMLocalBandwidth = params.find_integer("pim_local_bandwidth", 1024);
-  unsigned hostPIMBandwidth = params.find_integer("host_pim_bandwidth", 512);
-  unsigned interPIMBandwidth = params.find_integer("inter_pim_bandwidth", 128);
+  unsigned PIMLocalBandwidth = params.find<uint64_t>("pim_local_bandwidth", 1024);
+  unsigned hostPIMBandwidth = params.find<uint64_t>("host_pim_bandwidth", 512);
+  unsigned interPIMBandwidth = params.find<uint64_t>("inter_pim_bandwidth", 128);
 
-  string frequency = params.find_string("frequency", "1 GHz");
+  string frequency = params.find<string>("frequency", "1 GHz");
   float frequencyInGHz = (float)(UnitAlgebra(frequency).getRoundedValue()) /
     (float)(UnitAlgebra("1GHz").getRoundedValue());
 
@@ -633,15 +631,15 @@ void MyNetwork::configureParameters(SST::Params& params)
   dbg.debug(_L7_,"Max packets per cycle for inter-PIM communication: %u\n", maxPacketPerCycle[AccessType::ip]);
   dbg.debug(_L7_,"Max packets per cycle for Host-PIM communication: %u\n", maxPacketPerCycle[AccessType::hp]);
 
-  latency = params.find_integer("latency", 1);
-  localLatency = params.find_integer("local_latency", 1);
-  remoteLatency = params.find_integer("remote_latency", 1);
+  latency = params.find<unsigned>("latency", 1);
+  localLatency = params.find<unsigned>("local_latency", 1);
+  remoteLatency = params.find<unsigned>("remote_latency", 1);
 
   Clock::Handler<MyNetwork>* clockHandler = new Clock::Handler<MyNetwork>(this, &MyNetwork::clockTick);
   registerClock(frequency, clockHandler);
 
-  numCore = params.find_integer("num_core", 1);
-  numStack = params.find_integer("num_stack", 1);
+  numCore = params.find<unsigned>("num_core", 1);
+  numStack = params.find<unsigned>("num_stack", 1);
 
   // should be 1-to-N, N-to-1 or N-to-N
   if (numCore == numStack) 
@@ -654,9 +652,9 @@ void MyNetwork::configureParameters(SST::Params& params)
   }
   else assert(0);
 
-  stackSize = params.find_integer("stack_size", 0); // in MB
+  stackSize = params.find<uint64_t>("stack_size", 0); // in MB
   stackSize = stackSize * (1024*1024ul); // Convert into MBs
-  interleaveSize = (uint64_t) params.find_integer("interleave_size", 4096);
+  interleaveSize = params.find<uint64_t>("interleave_size", 4096);
 }
 
 void MyNetwork::configureLinks(SST::Params& params) 
@@ -671,7 +669,7 @@ void MyNetwork::configureLinks(SST::Params& params)
 		if (link) {
       highNetPorts.push_back(link);
       linkIdToLinkMap[highNetPorts[i]->getId()] = highNetPorts[i];
-      dbg.output(CALL_INFO, "Port %lu = Link %d\n", highNetPorts[i]->getId(), i);
+      dbg.output(CALL_INFO, "Port %d = Link %d\n", highNetPorts[i]->getId(), i);
     }
   }
   
@@ -683,7 +681,7 @@ void MyNetwork::configureLinks(SST::Params& params)
     if (link) {
       lowNetPorts.push_back(link);
       linkIdToLinkMap[lowNetPorts[i]->getId()] = lowNetPorts[i];
-      dbg.output(CALL_INFO, "Port %lu = Link %d\n", lowNetPorts[i]->getId(), i);
+      dbg.output(CALL_INFO, "Port %d = Link %d\n", lowNetPorts[i]->getId(), i);
     }
 	}
 }
