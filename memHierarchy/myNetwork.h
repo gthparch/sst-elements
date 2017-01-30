@@ -207,7 +207,7 @@ private:
   // latency map used in 1-to-N or N-to-1 configuration
   map<uint64_t, uint64_t> latencyMap;
   // per-stack latency map
-  vector<map<uint64_t, uint64_t>> perStackLatencyMaps;
+  vector<map<uint64_t,queue<uint64_t>>> perStackLatencyMaps;
 
   // monolithic latency accumulator used in 1-to-N or N-to-1 configuration
   uint64_t latencies;

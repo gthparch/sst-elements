@@ -273,7 +273,7 @@ void MyNetwork::processIncomingRequest(SST::Event *ev)
 
     // statistics
     perStackRequests[srcStackIdx][dstStackIdx]++;
-    perStackLatencyMaps[srcStackIdx][me->getAddr()] = currentCycle;
+    perStackLatencyMaps[srcStackIdx][me->getAddr()].push(currentCycle);
 
     if (DEBUG_ALL || DEBUG_ADDR == me->getBaseAddr()) {
       dbg.debug(_L3_,"RECV %s for 0x%" PRIx64 " src:%s dst:%u "
@@ -325,16 +325,18 @@ void MyNetwork::processIncomingResponse(SST::Event *ev)
     else
       addr = me->getAddr();
 
-    uint64_t roundTripTime = 0;
-    if (localAccess) {
-      roundTripTime = currentCycle + latency - perStackLatencyMaps[dstStackIdx][addr];
+    uint64_t roundTripTime = currentCycle + latency - perStackLatencyMaps[dstStackIdx][addr].front();
+    if (localAccess)
       localRequestLatencies[dstStackIdx] += roundTripTime;
-    } else {
-      roundTripTime = currentCycle + latency - perStackLatencyMaps[dstStackIdx][addr];
+    else
       remoteRequestLatencies[dstStackIdx] += roundTripTime;
-    }
 
-    perStackLatencyMaps[dstStackIdx].erase(addr);
+    printf("[%u] %s, RTT:%" PRIu64 ", REQ:%" PRIu64", RESP:%" PRIu64 ", ADDR:0x%" PRIx64 "\n", 
+        dstStackIdx, localAccess ? "L" : "R", roundTripTime, perStackLatencyMaps[dstStackIdx][addr].front(), currentCycle, addr);
+
+    perStackLatencyMaps[dstStackIdx][addr].pop();
+    if (perStackLatencyMaps[dstStackIdx][addr].empty())
+      perStackLatencyMaps[dstStackIdx].erase(addr);
     perStackResponses[srcStackIdx][dstStackIdx]++;
 
     if (DEBUG_ALL || DEBUG_ADDR == addr) {
@@ -753,7 +755,7 @@ void MyNetwork::initStats()
       localRequestLatencies.push_back(0);
       remoteRequestLatencies.push_back(0);
 
-      perStackLatencyMaps.push_back(map<uint64_t, uint64_t>());
+      perStackLatencyMaps.push_back(map<uint64_t, queue<uint64_t>>());
       perStackResponses.push_back(vector<uint64_t>());
       perStackRequests.push_back(vector<uint64_t>());
       for (int j = 0; j < numStack; ++j) {
